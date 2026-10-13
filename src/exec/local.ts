@@ -1,5 +1,4 @@
 import * as fs from "node:fs/promises";
-import { constants as C } from "node:fs";
 import { dirname } from "node:path";
 import type { Executor, RunOptions, RunResult, Stat, StatType } from "../types.ts";
 

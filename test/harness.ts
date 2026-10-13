@@ -22,6 +22,7 @@ export class FakePacman {
   groups = new Set(["plasma"]);
   repos = ["core", "extra"];
   required = new Set<string>(); // packages that -Rns refuses to remove
+  needed = new Set<string>(); // dependencies something still requires (not orphans)
 
   handle = (argv: string[]) => {
     if (argv[0] === "sh" && argv[2] === "command -v paru") return this.installed.has("paru") ? ok("/usr/bin/paru\n") : fail("", 1);
@@ -39,6 +40,7 @@ export class FakePacman {
       case "-Qq": return list(this.installed.keys());
       case "-Qqe": return list([...this.installed].filter(([, e]) => e).map(([n]) => n));
       case "-Qqm": return list([...this.installed.keys()].filter((n) => this.foreign.has(n)));
+      case "-Qqdt": return list([...this.installed].filter(([n, e]) => !e && !this.needed.has(n)).map(([n]) => n));
       case "-Slq": return list(this.repo);
       case "-Sg": return list(this.groups);
       case "-Sy": return ok();
@@ -68,6 +70,7 @@ export class FakeApt {
   pending = new Set<string>();
   updates = 0;
   required = new Set<string>(); // packages purge refuses to remove
+  needed = new Set<string>(); // automatic packages something still requires (not autoremovable)
 
   handle = (argv: string[], opts?: RunOptions) => {
     const names = argv.filter((a, i) => i > 0 && !a.startsWith("-") && argv[i - 1] !== "-o" && argv[i - 1] !== "-f");
@@ -103,7 +106,10 @@ export class FakeApt {
           for (const n of pkgs) this.installed.delete(n);
           return ok();
         }
-        if (op === "autoremove") return ok();
+        if (op === "autoremove") {
+          if (!argv.includes("-s")) return ok();
+          return list([...this.installed].filter(([n, m]) => !m && !this.needed.has(n)).map(([n]) => `Remv ${n} [1.0]`));
+        }
         return fail(`fake apt-get: unhandled ${argv.join(" ")}`);
       }
     }
@@ -313,7 +319,8 @@ export function makeEnv(opts: { os?: "arch" | "debian"; types?: ResourceType[] }
     const exact = opts.packages?.mode === "exact" ? { keep: ["base", ...(opts.packages.keep ?? [])], demote: opts.demote ?? false } : undefined;
     const names = [...(opts.packages?.remove ?? []), ...g.removals];
     const remove = names.length ? { names, demote: opts.demote ?? false } : undefined;
-    return makePlan({ host: "testhost", facts, graph: g, order, prev: await state.latest("testhost"), types, x, repo, force: opts.force, filter: makeFilter(opts), exact, remove });
+    const removeOrphans = g.removeOrphans ? { keep: ["base", ...(opts.packages?.keep ?? [])] } : undefined;
+    return makePlan({ host: "testhost", facts, graph: g, order, prev: await state.latest("testhost"), types, x, repo, force: opts.force, filter: makeFilter(opts), exact, remove, removeOrphans });
   }
 
   async function apply(modules: ModuleRef[], opts: PlanOpts = {}) {
@@ -340,7 +347,7 @@ type PlanOpts = {
 export const mutations = (calls: string[][]) =>
   calls
     .map((c) => c.join(" "))
-    .filter((c) => !/^(pacman -Q|pacman -S[lg]|systemctl (--user )?show|getent|sh -c command -v|pacman-conf|dpkg-query|apt-mark showmanual|apt-cache|flatpak list|git -C \S+ (rev-parse|remote|symbolic-ref|status|log|stash)|ls -A)/.test(c));
+    .filter((c) => !/^(pacman -Q|pacman -S[lg]|systemctl (--user )?show|getent|sh -c command -v|pacman-conf|dpkg-query|apt-mark showmanual|apt-get -s|apt-cache|flatpak list|git -C \S+ (rev-parse|remote|symbolic-ref|status|log|stash)|ls -A)/.test(c));
 
 export const ops = (p: Plan) =>
   p.items.filter((i) => i.op !== "noop").map((i) => `${i.op === "change" ? i.action : i.op} ${i.id}`).sort();

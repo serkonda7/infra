@@ -47,7 +47,6 @@ export const dev = module("dev", (ctx) => {
 - [State, pruning and rollback](docs/state.md)
 - [Remote hosts and secrets](docs/remote.md)
 - [CLI](docs/cli.md)
-- [CI: offline plans](docs/ci.md)
 - [Writing resource types (plugins)](docs/plugins.md)
 
 Building from source and the code layout: [CONTRIBUTING.md](CONTRIBUTING.md).

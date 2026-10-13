@@ -13,8 +13,7 @@ bun install
 bun run build                 # → dist/rig
 sudo ln -sf "$PWD/dist/rig" /usr/local/bin/rig
 
-# 3. Preview the example config, then run checks
-rig plan --config example zephyr --offline
+# 3. Run checks
 bun test                      # unit + integration tests against fake executors
 bun run typecheck
 ```
@@ -22,8 +21,8 @@ bun run typecheck
 No build needed for day-to-day work — run directly from source:
 
 ```sh
-bun src/cli/main.ts plan --config example zephyr --offline
-# or via the alias: bun run rig plan --config example zephyr --offline
+bun src/cli/main.ts --help
+# or via the alias: bun run rig --help
 ```
 
 ## Building and testing
@@ -32,7 +31,7 @@ bun src/cli/main.ts plan --config example zephyr --offline
 bun install
 bun run build                 # → dist/rig (single binary, embeds Bun)
 bun test                      # unit + integration tests against fake executors
-bun run rig plan --config example zephyr --offline   # run from source
+bun run rig --help            # run from source
 ```
 
 ## Layout
@@ -41,13 +40,13 @@ bun run rig plan --config example zephyr --offline   # run from source
 src/
 ├── cli/        commands, terminal/NDJSON sessions, why/status/rollback
 ├── config/     defineConfig, host(), module(), the evaluation context
-├── engine.ts   load → facts → evaluate → validate → plan; offline check
-├── facts/      local facts, fixtures for offline plans
+├── engine.ts   load → facts → evaluate → validate → plan
+├── facts/      local facts
 ├── graph/      registry, merging, implicit edges, toposort
 ├── plan/       differ, plan rendering
 ├── apply/      batched apply, triggers, snapshots, dead-man's switch
 ├── state/      generations, object store, gc
-├── exec/       executors: local, sudo helper, fake (tests), offline
+├── exec/       executors: local, sudo helper, fake (tests)
 ├── resources/  one file per resource type
 ├── remote/     SSH transport, bundles, binary cache
 ├── secrets/    age, Secret values

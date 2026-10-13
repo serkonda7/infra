@@ -28,6 +28,8 @@ export class Graph {
   readonly secrets = new Set<string>();
   /** Package names (globs) modules asked to remove with pkg.remove, merged with the host's packages.remove. */
   readonly removals: string[] = [];
+  /** Modules asked to prune orphaned dependencies with pkg.removeOrphans. */
+  removeOrphans = false;
   private seq = 0;
 
   add(type: ResourceType, spec: any, prov: Provenance): string {

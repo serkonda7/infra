@@ -1,7 +1,6 @@
 import type { Executors, Facts, Scope } from "./types.ts";
 import { gatherFacts } from "./facts/index.ts";
 import { homedir } from "node:os";
-import { relative } from "node:path";
 import { CONFIG_FILE, findConfigDir, loadConfig } from "./config/load.ts";
 import { resolveHost, type ConfigDef, type HostDef } from "./config/define.ts";
 import { evaluate } from "./config/context.ts";
@@ -12,7 +11,6 @@ import { UserExecutor, spawn } from "./exec/local.ts";
 import { systemExecutor } from "./exec/helper.ts";
 import type { Decl, Graph } from "./graph/graph.ts";
 import { SecretStore } from "./secrets/store.ts";
-import { OfflineExecutor, type Fixture } from "./facts/fixture.ts";
 import { errMsg } from "./resources/util.ts";
 
 export class ConfigError extends Error {
@@ -143,51 +141,14 @@ export async function prepare(opts: EngineOptions): Promise<Prepared> {
 }
 
 /** Run every resource type's validate() over its declarations. */
-async function validate(graph: Graph, types: TypeRegistry, ctx: { facts: Facts; x: Executors; offline?: boolean; skip?: (kind: string) => boolean }): Promise<string[]> {
+async function validate(graph: Graph, types: TypeRegistry, ctx: { facts: Facts; x: Executors }): Promise<string[]> {
   const ids = new Set(graph.decls.keys());
   const byKind = new Map<string, unknown[]>();
   for (const d of graph.decls.values()) (byKind.get(d.type.kind) ?? byKind.set(d.type.kind, []).get(d.type.kind)!).push(d.spec);
   const errs = await Promise.all(
-    [...byKind].filter(([k]) => !ctx.skip?.(k)).map(([k, specs]) => types.get(k).validate?.(specs as any[], { facts: ctx.facts, x: ctx.x, ids, offline: ctx.offline }) ?? []),
+    [...byKind].map(([k, specs]) => types.get(k).validate?.(specs as any[], { facts: ctx.facts, x: ctx.x, ids }) ?? []),
   );
   return errs.flat();
-}
-
-export interface OfflineCheck extends Target {
-  graph: Graph;
-  order: string[];
-  warnings: string[];
-}
-
-/**
- * `rig plan --offline`: evaluate and validate a host against fixture facts, without touching
- * any machine and without decrypting secrets (CI has no keys). Throws ConfigError on problems.
- */
-export async function checkOffline(opts: EngineOptions & { fixture: Fixture }): Promise<OfflineCheck> {
-  const facts = opts.fixture.facts;
-  const t = await loadTarget({ ...opts, host: opts.host ?? opts.fixture.host ?? facts.hostname, facts });
-  if (t.hostDef.os !== facts.os.family) throw new ConfigError([`host ${t.hostName} is declared os: "${t.hostDef.os}" but the facts are from ${facts.os.name} (${facts.os.family})`]);
-  const graph = evaluateHost(t, facts);
-  const order = graph.finalize();
-  const warnings: string[] = [];
-  // Secrets can't be decrypted here, but they have to exist.
-  const store = new SecretStore(t.repo, facts.user.home);
-  for (const name of graph.secrets)
-    if (!(await Bun.file(store.path(name)).exists())) warnings.push(`secret "${name}": ${relative(t.repo, store.path(name))} doesn't exist yet (rig secret edit ${name})`);
-  if (graph.errors.length) throw new ConfigError(graph.errors);
-
-  const index = opts.fixture.packages;
-  const offline = new OfflineExecutor(index);
-  const usesPkgs = [...graph.decls.values()].some((d) => d.type.kind.startsWith("pkg:") && d.type.kind !== "pkg:flatpak");
-  if (usesPkgs && !index) warnings.push("package names not checked: the fixture has no package list (rig facts --save adds one)");
-  const errs = await validate(graph, typeRegistry(t.config.types ?? []), {
-    facts,
-    x: { user: offline, system: offline },
-    offline: true,
-    skip: (k) => !index && k.startsWith("pkg:"),
-  });
-  if (errs.length) throw new ConfigError(errs);
-  return { ...t, graph, order, warnings: [...graph.warnings, ...warnings] };
 }
 
 export function makeFilter(opts: Pick<EngineOptions, "userOnly" | "only">) {
@@ -214,6 +175,7 @@ export async function plan(p: Prepared, opts: EngineOptions): Promise<Plan> {
     filter: makeFilter(opts),
     exact: p.hostDef.packages?.mode === "exact" ? { keep: ["base", ...(p.hostDef.packages.keep ?? [])], demote: opts.demote ?? false } : undefined,
     remove: remove.length ? { names: remove, demote: opts.demote ?? false } : undefined,
+    removeOrphans: p.graph.removeOrphans ? { keep: ["base", ...(p.hostDef.packages?.keep ?? [])] } : undefined,
   });
 }
 

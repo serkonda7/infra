@@ -20,6 +20,8 @@ export interface PacmanMeta {
   extraneous?: boolean;
   /** Listed in packages.remove (explicit removal request), not just undeclared in exact mode. */
   requested?: boolean;
+  /** A dependency nothing requires anymore; pruned because of packages.orphans. */
+  orphan?: boolean;
 }
 
 export const tail = (s: string, n = 6) => s.trim().split("\n").slice(-n).join("\n");
@@ -40,6 +42,7 @@ async function pendingRepos(ctx: ValidateContext): Promise<string[]> {
 /** Shared by every package backend: remove what rig installed, demote what it only marked explicit. */
 export function planPkgDestroy(_id: string, meta: PacmanMeta, live: PacmanLive | null): DestroyPlan {
   if (!live) return { op: "forget", note: "already removed" };
+  if (meta.orphan) return live.explicit ? { op: "forget", note: "now explicit; kept" } : { op: "destroy", note: "orphaned dependency" };
   if (meta.extraneous) {
     if (!live.explicit) return { op: "forget", note: "no longer explicit" };
     if (meta.requested)
@@ -160,16 +163,19 @@ function pkgType(b: Backend): ResourceType<PacmanSpec, PacmanLive, PacmanMeta> {
       return results;
     },
 
-    async extraneous({ declared, facts, keep, demote, only }, x) {
+    async extraneous({ declared, facts, keep, demote, only, orphans }, x) {
       if (facts.os.family !== "arch") return [];
-      const [explicit, foreignOut] = await Promise.all([x.user.run(["pacman", "-Qqe"]), x.user.run(["pacman", "-Qqm"])]);
+      // -Qqdt: installed as a dependency, required by nothing (optional dependents don't count).
+      const [candidates, foreignOut] = await Promise.all([x.user.run(["pacman", orphans ? "-Qqdt" : "-Qqe"]), x.user.run(["pacman", "-Qqm"])]);
       const foreign = new Set(lines(foreignOut.stdout));
       const kept = keep.map((k) => new Bun.Glob(k));
       const wanted = only?.map((k) => new Bun.Glob(k));
-      const meta: PacmanMeta = demote
-        ? { markedExplicit: true, extraneous: true, ...(only ? { requested: true } : {}) }
-        : { installed: true, extraneous: true, ...(only ? { requested: true } : {}) };
-      return lines(explicit.stdout)
+      const meta: PacmanMeta = orphans
+        ? { installed: true, extraneous: true, orphan: true }
+        : demote
+          ? { markedExplicit: true, extraneous: true, ...(only ? { requested: true } : {}) }
+          : { installed: true, extraneous: true, ...(only ? { requested: true } : {}) };
+      return lines(candidates.stdout)
         .filter((n) => b.owns(n, foreign) && !declared.has(prefix + n) && !kept.some((g) => g.match(n)) && (!wanted || wanted.some((g) => g.match(n))))
         .map((n) => ({ id: prefix + n, scope: "system" as const, meta, display: n }));
     },

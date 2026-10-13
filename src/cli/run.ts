@@ -1,7 +1,7 @@
 // `rig plan` / `rig apply` / `rig dot` against the machine rig runs on —
 // either locally, or as the target half of a remote apply.
 
-import { checkOffline, closeExecutors, gitCommit, plan as makePlan, prepare, type EngineOptions } from "../engine.ts";
+import { closeExecutors, gitCommit, plan as makePlan, prepare, type EngineOptions } from "../engine.ts";
 import { planView, eventView } from "../plan/format.ts";
 import { applyPlan, type ApplyOutcome } from "../apply/apply.ts";
 import { DeadMan, isRisky } from "../apply/deadman.ts";
@@ -13,9 +13,6 @@ import { errMsg } from "../resources/util.ts";
 import type { Facts } from "../types.ts";
 import type { Plan } from "../plan/plan.ts";
 import type { Session } from "./session.ts";
-import { parseFixture } from "../facts/fixture.ts";
-import { c, out } from "./ui.ts";
-import { relative } from "node:path";
 
 export interface RunOptions {
   engine: EngineOptions;
@@ -174,36 +171,4 @@ async function settleDeadman(deadman: DeadMan, plan: Plan, outcome: ApplyOutcome
     outcome.dirty = true;
     g.id = (plan.prev?.id ?? 0) + 1;
   }
-}
-
-/** `rig plan --offline --facts <file>`: evaluate and validate without the machine. Problems throw ConfigError. */
-export async function runOffline(engine: EngineOptions, fixturePath: string, opts: { json?: boolean; verbose?: boolean } = {}): Promise<number> {
-  const file = Bun.file(fixturePath);
-  if (!(await file.exists())) throw new Error(`no facts file ${fixturePath} (create one on the host with \`rig facts --save\`)`);
-  const fixture = parseFixture(await file.text(), fixturePath);
-  const r = await checkOffline({ ...engine, fixture });
-  const decls = r.order.map((id) => r.graph.decls.get(id)!);
-  const paths = { home: r.facts.user.home, repo: r.repo };
-  if (opts.json) {
-    const resources = decls.map((d) => ({ id: d.id, scope: d.scope, display: d.type.display(d.id, d.spec, paths), declaredBy: d.provenance }));
-    out(JSON.stringify({ host: r.hostName, os: r.facts.os.name, ok: true, warnings: r.warnings, resources }, null, 2));
-    return 0;
-  }
-  out(`${c.bold("host")} ${r.hostName} · ${r.facts.os.name} · offline, facts from ${relative(process.cwd(), fixturePath)}`);
-  const sections = new Map<string, typeof decls>();
-  for (const d of [...decls].sort((a, b) => a.type.order - b.type.order)) (sections.get(d.type.label) ?? sections.set(d.type.label, []).get(d.type.label)!).push(d);
-  out();
-  for (const [label, list] of sections) {
-    out(`  ${label.padEnd(22)} ${list.length}`);
-    if (opts.verbose) for (const d of list) out(c.dim(`      ${d.type.display(d.id, d.spec, paths)}`));
-  }
-  if (r.warnings.length) {
-    out();
-    out(c.yellow("warnings"));
-    for (const w of r.warnings) out(`  ${c.yellow("⚠")} ${w}`);
-  }
-  const checked = fixture.packages ? `package names checked against ${fixture.packages.backend} lists from ${fixture.packages.at.slice(0, 10)}` : "package names not checked";
-  out();
-  out(c.green(`OK · ${decls.length} resources evaluate and validate`) + c.dim(` (${checked})`));
-  return 0;
 }

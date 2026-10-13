@@ -6,18 +6,17 @@ import { homedir, tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import pkgJson from "../../package.json" with { type: "json" };
 import { ConfigError, closeExecutors, evaluateHost, isRemote, loadTarget, prepare, type EngineOptions } from "../engine.ts";
-import { UserExecutor, streamToStderr } from "../exec/local.ts";
-import { packageIndex, parseFixture, type Fixture } from "../facts/fixture.ts";
+import { streamToStderr } from "../exec/local.ts";
 import { formatWhy, why } from "./why.ts";
 import { formatStatus, status } from "./status.ts";
 import { rollback } from "./rollback.ts";
-import { gatherFacts } from "../facts/index.ts";
+import { gatherFacts, parseFacts } from "../facts/index.ts";
 import { findConfigDir } from "../config/load.ts";
 import { StateStore, defaultStateDir } from "../state/state.ts";
 import { executeAdopt, planAdopt, planAdoptPackages } from "./adopt.ts";
 import { serveHelper } from "../helper/server.ts";
 import { NdjsonSession, TerminalSession } from "./session.ts";
-import { runApply, runOffline, runPlan, type RunOptions } from "./run.ts";
+import { runApply, runPlan, type RunOptions } from "./run.ts";
 import { runRemote } from "../remote/client.ts";
 import { BUNDLE_FILE, unpackBundle } from "../remote/bundle.ts";
 import { Inbox, type ToTarget } from "../remote/protocol.ts";
@@ -29,9 +28,6 @@ const HELP = `${c.bold("rig")} ${pkgJson.version} — declarative machine & dotf
 
 ${c.bold("usage")}
   rig plan [host]            show what apply would change (exit 2 if changes)
-        --offline [--facts <file>]
-                             …only evaluate and validate, against saved facts (default
-                             fixtures/<host>.json) — no machine, no keys needed; for CI
   rig apply [host] [-y]      plan, confirm, apply (hosts with connect: are applied over SSH)
   rig dot [-y]               apply home-scoped resources only (no sudo)
   rig adopt <path>           move a file/dir into dotfiles/ and link it back
@@ -43,7 +39,6 @@ ${c.bold("usage")}
         [host] [--facts <file>]
   rig status [host]          current generation, drift, pending .pacnew/.dpkg-dist files, failed units
   rig facts [host]           print gathered facts as JSON (of a remote host over SSH)
-        [--save]             …write them with the package lists to fixtures/<host>.json, for --offline
   rig gen ls [host]          list generations
   rig gen gc [--keep <n>]    delete all but the newest n generations per host (default 10) and unused backups
   rig rollback <n> [host]    re-apply the config generation n was applied from (alias: rig gen rollback)
@@ -85,10 +80,7 @@ async function main(argv: string[]): Promise<number> {
       as: { type: "string" },
       bundle: { type: "string" },
       events: { type: "string" },
-      offline: { type: "boolean" },
       facts: { type: "string" },
-      save: { type: "boolean" },
-      packages: { type: "boolean" },
       keep: { type: "string" },
       help: { type: "boolean", short: "h" },
       version: { type: "boolean" },
@@ -100,7 +92,7 @@ async function main(argv: string[]): Promise<number> {
 
   const engine: EngineOptions = { configDir: f.config, force: f.force, only: f.only, demote: f.demote };
   if (f.bundle !== undefined) return bundleCommand(cmd, f);
-  if (f.facts !== undefined && !f.offline && cmd !== "why") return err("--facts works with `rig plan --offline` and `rig why`"), 1;
+  if (f.facts !== undefined && cmd !== "why") return err("--facts only works with rig why"), 1;
 
   switch (cmd) {
     case "plan":
@@ -108,13 +100,6 @@ async function main(argv: string[]): Promise<number> {
     case "dot": {
       const userOnly = cmd === "dot";
       const host = userOnly ? undefined : args[0];
-      if (f.offline) {
-        if (cmd !== "plan") return err("--offline only works with rig plan"), 1;
-        const repo = findConfigDir(f.config, homedir());
-        const fixture = f.facts ?? (host ? join(repo, "fixtures", `${host}.json`) : null);
-        if (!fixture) return err("rig plan --offline needs a host or --facts <file>"), 1;
-        return runOffline({ ...engine, configDir: repo, host }, fixture, { json: f.json, verbose: f.verbose });
-      }
       const session = new TerminalSession({ json: f.json, verbose: f.verbose, yes: f.yes, planOnly: cmd === "plan" });
       const run: RunOptions = { engine: { ...engine, host, userOnly, fast: userOnly }, userOnly, upgrade: f.upgrade, noSnapshot: f["no-snapshot"], verbose: f.verbose };
       if (!userOnly) {
@@ -167,30 +152,11 @@ async function main(argv: string[]): Promise<number> {
 
     case "facts": {
       const facts = gatherFacts();
-      const withPackages = !!(f.packages || f.save);
-      let text: string | null = null;
-      let hostName = args[0] ?? facts.hostname;
-      if (args[0] || f.save) {
+      if (args[0]) {
         const target = await loadTarget({ ...engine, host: args[0], facts });
-        hostName = target.hostName;
-        if (isRemote(target)) {
-          const code = await runRemote({ cmd: "facts", target, flags: withPackages ? ["--packages"] : [], session: new TerminalSession({ json: true }), output: (t) => (text = t) });
-          if (code !== 0 || text === null) return code || 1;
-        }
+        if (isRemote(target)) return runRemote({ cmd: "facts", target, flags: [], session: new TerminalSession({ json: true }) });
       }
-      if (text === null) {
-        const packages = withPackages ? await packageIndex(facts, new UserExecutor()) : null;
-        text = JSON.stringify(withPackages ? { facts, ...(packages ? { packages } : {}) } : facts, null, 2);
-      }
-      if (!f.save) return out(text), 0;
-      // Saved fixtures carry the config's name for the host, which `plan --offline` defaults to.
-      const fixture: Fixture = { host: hostName, ...parseFixture(text, "rig facts") };
-      const repo = findConfigDir(f.config, homedir());
-      const path = join(repo, "fixtures", `${hostName}.json`);
-      await Bun.write(path, JSON.stringify(fixture, null, 2) + "\n");
-      const pk = fixture.packages ? ` and ${fixture.packages.names.length} package names` : "";
-      out(c.green(`Wrote ${relative(repo, path)}`) + c.dim(` (facts${pk}) — check it in; CI runs rig plan ${hostName} --offline`));
-      return 0;
+      return out(JSON.stringify(facts, null, 2)), 0;
     }
 
     case "why": {
@@ -198,13 +164,13 @@ async function main(argv: string[]): Promise<number> {
       if (!query) return err("usage: rig why <id|path|name> [host] [--facts <file>]"), 1;
       const local = gatherFacts();
       let facts = local;
-      if (f.facts) facts = parseFixture(await Bun.file(f.facts).text(), f.facts).facts;
+      if (f.facts) facts = parseFacts(await Bun.file(f.facts).text(), f.facts);
       const target = await loadTarget({ ...engine, host: args[1] ?? f.host, facts: local });
       if (!f.facts && isRemote(target)) {
         let text: string | null = null;
         const code = await runRemote({ cmd: "facts", target, flags: [], session: new TerminalSession({ json: true }), output: (t) => (text = t) });
         if (code !== 0 || text === null) return code || 1;
-        facts = parseFixture(text, target.hostName).facts;
+        facts = parseFacts(text, target.hostName);
       }
       // No secrets: what a resource is and where it comes from doesn't depend on their values.
       const graph = evaluateHost(target, facts);

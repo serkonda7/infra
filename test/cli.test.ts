@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, readlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { module } from "../src/config/define.ts";
-import { ConfigError, checkOffline } from "../src/engine.ts";
+import { evaluateHost, loadTarget } from "../src/engine.ts";
 import { spawn } from "../src/exec/local.ts";
-import { parseFixture, type Fixture } from "../src/facts/fixture.ts";
+import { parseFacts } from "../src/facts/index.ts";
 import { why } from "../src/cli/why.ts";
 import { status } from "../src/cli/status.ts";
 import { rollback } from "../src/cli/rollback.ts";
@@ -14,7 +14,6 @@ import { ok } from "../src/exec/fake.ts";
 import { makeEnv } from "./harness.ts";
 
 const EXAMPLE = join(import.meta.dir, "../example");
-const fixture = (host: string): Fixture => parseFixture(readFileSync(join(EXAMPLE, "fixtures", `${host}.json`), "utf8"), host);
 
 const quiet: Session = { plan() {}, confirm: async () => true, sudo: async () => true, info() {}, warn() {}, event() {}, done() {} };
 
@@ -24,36 +23,21 @@ function writeConfig(dir: string, body: string) {
   writeFileSync(join(dir, "rig.config.ts"), `import { defineConfig, host, module } from "rig";\n${body}\n`);
 }
 
-describe("offline plan", () => {
-  test("the example hosts evaluate and validate against their fixtures", async () => {
-    const z = await checkOffline({ configDir: EXAMPLE, fixture: fixture("zephyr") });
-    expect(z.hostName).toBe("zephyr");
-    expect(z.graph.decls.has("pkg:flatpak:org.mozilla.firefox")).toBe(true);
-    expect(z.graph.decls.has("kcfg:/home/john/.config/kwinrc:Effect-overview][Shortcuts.Toggle")).toBe(true);
-    expect(z.warnings).toEqual([]);
-
-    const v = await checkOffline({ configDir: EXAMPLE, fixture: fixture("vault") });
-    expect(v.graph.decls.has("pkg:apt:fd-find")).toBe(true); // alias resolved with the fixture's facts
-    expect(v.warnings).toEqual(['secret "caddy.env": secrets/caddy.env.age doesn\'t exist yet (rig secret edit caddy.env)']);
+describe("example config", () => {
+  test("both hosts evaluate", async () => {
+    for (const [host, os] of [["zephyr", "arch"], ["vault", "debian"]] as const) {
+      const { facts } = makeEnv({ os });
+      const g = evaluateHost(await loadTarget({ configDir: EXAMPLE, host, facts }), facts);
+      g.finalize();
+      expect(g.errors).toEqual([]);
+      if (host === "zephyr") expect(g.decls.has("pkg:flatpak:org.mozilla.firefox")).toBe(true);
+      if (host === "vault") expect(g.decls.has("pkg:apt:fd-find")).toBe(true); // alias resolved with the host's facts
+    }
   });
 
-  test("unknown packages fail against the fixture's package list; without one they're skipped with a warning", async () => {
-    const f = fixture("zephyr");
-    f.packages!.names = f.packages!.names.filter((n) => n !== "steam");
-    const e = await checkOffline({ configDir: EXAMPLE, fixture: f }).catch((e) => e);
-    expect(e).toBeInstanceOf(ConfigError);
-    expect((e as ConfigError).problems).toEqual([expect.stringContaining("pkg:pacman:steam: not found in sync repos")]);
-
-    delete f.packages;
-    const r = await checkOffline({ configDir: EXAMPLE, fixture: f });
-    expect(r.warnings).toEqual([expect.stringContaining("package names not checked")]);
-  });
-
-  test("plain `rig facts` output works as a fixture too", () => {
-    const f = parseFixture(JSON.stringify(fixture("vault").facts), "facts.json");
-    expect(f.facts.os.codename).toBe("trixie");
-    expect(f.packages).toBeUndefined();
-    expect(() => parseFixture("{}", "x.json")).toThrow("doesn't look like rig facts");
+  test("parseFacts rejects anything that isn't rig facts", () => {
+    expect(parseFacts(JSON.stringify(makeEnv().facts), "facts.json").os.family).toBe("arch");
+    expect(() => parseFacts("{}", "x.json")).toThrow("doesn't look like rig facts");
   });
 });
 

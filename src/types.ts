@@ -144,14 +144,9 @@ export interface ValidateContext {
   x: Executors;
   /** Every declared resource ID (e.g. to see which pacman repos are declared). */
   ids: ReadonlySet<string>;
-  /**
-   * `rig plan --offline`: the machine isn't there. `x` only answers package-list queries from
-   * the fixture; checks that need anything else should be skipped.
-   */
-  offline?: boolean;
 }
 
-/** A resource found on the machine that the config does not declare (exact package mode, packages.remove). */
+/** A resource found on the machine that the config does not declare (exact package mode, packages.remove, pkg.removeOrphans). */
 export interface Extraneous {
   id: string;
   scope: Scope;
@@ -170,6 +165,8 @@ export interface ExtraneousOptions {
   demote: boolean;
   /** Names (globs) to remove explicitly (packages.remove): when set, nothing else is extraneous. */
   only?: string[];
+  /** Orphaned dependencies instead of explicit packages (pkg.removeOrphans); `demote` doesn't apply. */
+  orphans?: boolean;
 }
 
 export interface ResourceType<Spec extends ResourceBase = any, Live = any, Meta = any> {

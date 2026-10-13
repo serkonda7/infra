@@ -90,7 +90,6 @@ export const kconfigType: ResourceType<KconfigSpec, KconfigLive, KconfigMeta> = 
   equal: (a, b) => a.value === b.value && a.bool === b.bool,
 
   async validate(_specs, ctx) {
-    if (ctx.offline) return [];
     const r = await ctx.x.user.run(["sh", "-c", `command -v ${KWRITECONFIG}`]);
     return r.code === 0 ? [] : [`kconfig() needs ${KWRITECONFIG} (Arch: kconfig, Debian: libkf6config-bin)`];
   },

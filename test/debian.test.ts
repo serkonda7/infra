@@ -103,6 +103,16 @@ describe("apt", () => {
     expect(env.user.calls.filter((c) => c[0] === "pacman")).toEqual([]);
   });
 
+  test("pkg.removeOrphans removes what apt-get autoremove would", async () => {
+    const env = makeEnv({ os: "debian" });
+    env.apt.installed.set("htop", true);
+    for (const n of ["libfoo1", "libbar2", "linux-image-6.1-amd64"]) env.apt.installed.set(n, false);
+    env.apt.needed.add("libbar2");
+    const p = await env.plan([module("m", (ctx) => void (ctx.pkg(["htop"]), ctx.pkg.removeOrphans()))]);
+    expect(ops(p)).toEqual(["destroy pkg:apt:libfoo1"]);
+    expect(env.user.calls.filter((c) => c[0] === "pacman")).toEqual([]);
+  });
+
   test("validation: unknown names fail, empty package lists and pending sources skip the check", async () => {
     const env = makeEnv({ os: "debian" });
     const ctx = (ids: string[] = []) => ({ facts: env.facts, x: env.x, ids: new Set(ids) });

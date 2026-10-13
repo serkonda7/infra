@@ -103,3 +103,15 @@ export function gatherFacts(): Facts {
     boot: { loader: bootLoader() },
   };
 }
+
+/** `rig facts` output, e.g. saved from another machine. */
+export function parseFacts(text: string, source: string): Facts {
+  let f: Partial<Facts>;
+  try {
+    f = JSON.parse(text);
+  } catch (e) {
+    throw new Error(`${source}: not JSON (${e instanceof Error ? e.message : e})`);
+  }
+  if (!f?.hostname || !f.os?.family || !f.user?.home) throw new Error(`${source}: doesn't look like rig facts (create one with \`rig facts\`)`);
+  return f as Facts;
+}

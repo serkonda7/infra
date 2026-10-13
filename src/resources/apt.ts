@@ -148,8 +148,19 @@ export const aptType: ResourceType<PacmanSpec, PacmanLive, PacmanMeta> = {
     return results;
   },
 
-  async extraneous({ declared, facts, keep, demote, only }, x) {
+  async extraneous({ declared, facts, keep, demote, only, orphans }, x) {
     if (facts.os.family !== "debian") return [];
+    if (orphans) {
+      // What `apt-get autoremove` would take: automatically installed and no longer required.
+      const r = await x.user.run(["apt-get", "-s", "autoremove"], { env: ENV });
+      const kept = [...keep, ...APT_PROTECTED].map((k) => new Bun.Glob(k));
+      const meta: PacmanMeta = { installed: true, extraneous: true, orphan: true };
+      return lines(r.stdout)
+        .map((l) => /^Remv (\S+)/.exec(l)?.[1])
+        .filter((n): n is string => !!n && !declared.has(prefix + n) && !kept.some((g) => g.match(n)))
+        .sort()
+        .map((n) => ({ id: prefix + n, scope: "system" as const, meta, display: n }));
+    }
     const [man, prio] = await Promise.all([
       manual(x.user),
       x.user.run(["dpkg-query", "-W", "-f", "${Package}\t${Priority}\n"], { env: ENV }),

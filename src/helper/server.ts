@@ -20,8 +20,9 @@ type Handler = (x: UserExecutor, args: any[]) => Promise<unknown>;
 
 const OPS: Record<string, Handler> = {
   run: (x, [argv, opts]) => {
-    const o = opts as (Omit<RunOptions, "stdin"> & { stdin?: string }) | undefined;
-    return x.run(argv, o && { ...o, stdin: o.stdin !== undefined ? unb64(o.stdin) : undefined });
+    // JSON turns omitted options into null.
+    const o = opts as (Omit<RunOptions, "stdin"> & { stdin?: string }) | null;
+    return x.run(argv, o ? { ...o, stdin: o.stdin != null ? unb64(o.stdin) : undefined } : undefined);
   },
   readFile: async (x, [path]) => {
     const data = await x.readFile(path);

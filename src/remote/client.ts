@@ -38,14 +38,7 @@ export async function runRemote(r: RemoteRun): Promise<number> {
     if (f.code !== 0) throw new Error(`rig facts on ${connect.ssh} failed: ${f.stderr.trim() || `exit ${f.code}`}`);
     const facts = JSON.parse(f.stdout) as Facts;
     if (r.cmd === "facts") {
-      let text = JSON.stringify(facts, null, 2);
-      // Extra flags (--packages) need another round trip; plain facts we already have.
-      if (r.flags.length) {
-        const more = await ssh.run([bin, "facts", ...r.flags]);
-        if (more.code !== 0) throw new Error(`rig facts on ${connect.ssh} failed: ${more.stderr.trim() || `exit ${more.code}`}`);
-        text = more.stdout.trim();
-      }
-      (r.output ?? out)(text);
+      (r.output ?? out)(JSON.stringify(facts, null, 2));
       return 0;
     }
     if (r.target.hostDef.os !== facts.os.family)

@@ -328,6 +328,35 @@ describe("packages.remove", () => {
   });
 });
 
+describe("pkg.removeOrphans", () => {
+  test("removes dependencies nothing requires anymore, in either mode", async () => {
+    const env = makeEnv();
+    for (const n of ["git", "htop"]) env.pacman.installed.set(n, true);
+    for (const n of ["fd", "ripgrep", "yay-bin", "linux-cachyos"]) env.pacman.installed.set(n, false);
+    env.pacman.foreign.add("yay-bin");
+    env.pacman.needed.add("fd");
+    const m = module("m", (ctx) => {
+      ctx.pkg(["git"]);
+      ctx.pkg.removeOrphans();
+    });
+    const plain = module("plain", (ctx) => void ctx.pkg(["git"]));
+    expect(ops(await env.plan([plain]))).toEqual([]);
+
+    const packages = { keep: ["linux-*"] };
+    const p = await env.plan([m], { packages });
+    expect(ops(p)).toEqual(["destroy pkg:aur:yay-bin", "destroy pkg:pacman:ripgrep"]);
+    expect(p.items.find((i) => i.id === "pkg:pacman:ripgrep")).toMatchObject({ note: "orphaned dependency" });
+    // Declared orphans are marked explicit instead.
+    expect(ops(await env.plan([module("m", (ctx) => void (ctx.pkg(["git", "ripgrep"]), ctx.pkg.removeOrphans()))], { packages }))).toEqual(["destroy pkg:aur:yay-bin", "update pkg:pacman:ripgrep"]);
+
+    const r = await env.apply([m], { packages, demote: true });
+    expect(r.failed).toBe(0);
+    expect(mutations(env.system.calls)).toEqual(["pacman -Rns --noconfirm yay-bin", "pacman -Rns --noconfirm ripgrep"]);
+    for (const n of ["fd", "linux-cachyos", "htop"]) expect(env.pacman.installed.has(n)).toBe(true);
+    expect(ops(await env.plan([m], { packages }))).toEqual([]);
+  });
+});
+
 describe("kernelParams", () => {
   test("merged into a block in /etc/default/limine; kernel packages also regenerate entries", async () => {
     const env = makeEnv();
@@ -368,6 +397,7 @@ describe("privileged helper", () => {
       expect(await x.lstat(join(dir, "a/b.txt"))).toEqual({ type: "file", mode: 0o640 });
       const r = await x.run(["sh", "-c", "cat; echo err >&2; exit 3"], { stdin: "in" });
       expect(r).toEqual({ code: 3, stdout: "in", stderr: "err\n" });
+      expect(await x.run(["echo", "no-opts"])).toEqual({ code: 0, stdout: "no-opts\n", stderr: "" });
       await x.symlink("/target", join(dir, "l"));
       expect(await x.readlink(join(dir, "l"))).toBe("/target");
       const [, notEmpty] = await Promise.all([x.mkdirp(join(dir, "p/q")), x.rmdir(join(dir, "a"))]);

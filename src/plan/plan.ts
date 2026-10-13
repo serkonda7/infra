@@ -44,6 +44,8 @@ export interface PlanInput {
   exact?: { keep: string[]; demote: boolean };
   /** packages.remove: globs of undeclared packages to remove in any mode, even ones rig didn't install. */
   remove?: { names: string[]; demote: boolean };
+  /** pkg.removeOrphans: dependencies nothing requires anymore are removed too. */
+  removeOrphans?: { keep: string[] };
 }
 
 export async function makePlan(input: PlanInput): Promise<Plan> {
@@ -99,6 +101,7 @@ export async function makePlan(input: PlanInput): Promise<Plan> {
         warnings.push(`${d.id} is declared but matches packages.remove; kept`);
     await prune({ keep: ["base"], demote: input.remove.demote, only: input.remove.names }, true);
   }
+  if (input.removeOrphans) await prune({ keep: input.removeOrphans.keep, demote: false, orphans: true }, false);
 
   // Batched reads, one call per resource type.
   const byKind = new Map<string, { id: string; scope: Scope; spec?: unknown; meta?: unknown }[]>();

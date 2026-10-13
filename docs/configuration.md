@@ -8,8 +8,7 @@ infra/
 ├── hosts/zephyr.ts     # host({ os, modules, … })
 ├── modules/dev.ts      # module("dev", (ctx) => { … })
 ├── dotfiles/           # linked or copied into $HOME
-├── secrets/            # age-encrypted, safe to commit
-└── fixtures/           # saved facts for `rig plan --offline` (CI)
+└── secrets/            # age-encrypted, safe to commit
 ```
 
 ```ts
@@ -83,6 +82,11 @@ Context values: `facts` (distro, CPU level, GPU, root fs, boot loader, users,
   explicitly-installed packages and Flatpak apps in either mode, including
   ones installed before rig. Declared packages win (with a
   warning), `base` is never removed, and `--demote` applies here too.
+- **removeOrphans** (`ctx.pkg.removeOrphans()` in a module) also removes
+  dependencies nothing requires anymore (`pacman -Qdt`, or what `apt-get
+  autoremove` would take), including ones left behind before rig. Declared
+  packages and `keep` globs are spared; `--demote` doesn't apply, so packages
+  it demotes are removed on the next run.
 - `rig adopt packages` writes your machine's explicit packages to
   `modules/_adopted/<host>-packages.ts` to start from.
 

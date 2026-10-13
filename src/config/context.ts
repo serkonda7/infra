@@ -96,6 +96,8 @@ export interface PkgFn {
   flatpak(apps: string | string[], opts?: FlatpakOptions): string[];
   /** Remove these packages or Flatpak apps (globs) in any package mode, even ones installed before rig. Declared packages win. */
   remove(names: string | string[]): void;
+  /** Also remove orphaned dependencies nothing requires anymore (`pacman -Qdt`, or what `apt-get autoremove` would take). Declared packages and `keep` globs are spared. */
+  removeOrphans(): void;
 }
 
 export interface UnitOptions extends Deps {
@@ -428,6 +430,7 @@ export function evaluate(hostDef: HostDef, env: EvalEnv): Graph {
           );
         }),
       remove: (names: string | string[]) => void g.removals.push(...(Array.isArray(names) ? names : [names])),
+      removeOrphans: () => void (g.removeOrphans = true),
     },
   );
 

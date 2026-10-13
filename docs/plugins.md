@@ -121,7 +121,7 @@ presentation fields. All types are exported from `rig`.
 | `edges(spec)` | no | Implicit dependencies (resource IDs). |
 | `afterPackages` | no | Also depend on every package declared by the same module. |
 | `deferred` | no | Apply at the very end of a run, like triggers. |
-| `validate(specs, ctx)` | no | Plan-time checks over all declarations of this kind; return error strings. When `ctx.offline` is set (`rig plan --offline`), the machine isn't available: skip anything that needs it. |
+| `validate(specs, ctx)` | no | Plan-time checks over all declarations of this kind; return error strings. |
 | `extraneous(opts, x)` | no | Exact mode: live resources of this kind that aren't declared and should be pruned (package managers). |
 
 ### Executors
