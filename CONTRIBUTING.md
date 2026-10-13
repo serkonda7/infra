@@ -1,5 +1,31 @@
 # Contributing
 
+## Quick-start (build from source)
+
+```sh
+# 1. Prerequisites: git + Bun 1.4.3 (pinned in package.json `packageManager`)
+curl -fsSL https://bun.sh/install | bash
+git clone https://github.com/serkonda7/infra.git
+cd infra
+
+# 2. Install deps, build and symlink
+bun install
+bun run build                 # → dist/rig
+sudo ln -sf "$PWD/dist/rig" /usr/local/bin/rig
+
+# 3. Preview the example config, then run checks
+rig plan --config example zephyr --offline
+bun test                      # unit + integration tests against fake executors
+bun run typecheck
+```
+
+No build needed for day-to-day work — run directly from source:
+
+```sh
+bun src/cli/main.ts plan --config example zephyr --offline
+# or via the alias: bun run rig plan --config example zephyr --offline
+```
+
 ## Building and testing
 
 ```sh

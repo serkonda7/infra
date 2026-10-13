@@ -7,7 +7,6 @@ Declarative machine and dotfile management.
 # 1. Dependencies
 ## Arch
 sudo pacman -Syu --needed git curl 
-
 ## Debian
 sudo apt update && sudo apt install -y git curl ca-certificates
 
@@ -17,6 +16,7 @@ sudo chmod +x /usr/local/bin/rig
 
 # 3. Your config
 git clone https://github.com/<you>/<your-config>.git ~/dotfiles
+cd dotfiles
 
 # 4. Preview, then apply
 rig plan <host>
