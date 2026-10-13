@@ -1,20 +1,20 @@
 import { module } from "rig";
 
-export const hardening = module("hardening", ({ pkg, file, unit, tmpl }) => {
-  pkg(["nftables", "unattended-upgrades"]);
+export const hardening = module("hardening", (ctx) => {
+  ctx.pkg(["nftables", "unattended-upgrades"]);
 
-  const sshd = file(
+  const sshd = ctx.file(
     "/etc/ssh/sshd_config.d/10-rig.conf",
-    tmpl`
+    ctx.tmpl`
       PasswordAuthentication no
       PermitRootLogin no
     `,
   );
-  unit("ssh", { restartOn: [sshd] });
+  ctx.unit("ssh", { restartOn: [sshd] });
 
-  const rules = file(
+  const rules = ctx.file(
     "/etc/nftables.conf",
-    tmpl`
+    ctx.tmpl`
       #!/usr/sbin/nft -f
       flush ruleset
       table inet filter {
@@ -27,5 +27,5 @@ export const hardening = module("hardening", ({ pkg, file, unit, tmpl }) => {
       }
     `,
   );
-  unit("nftables", { started: true, restartOn: [rules] });
+  ctx.unit("nftables", { started: true, restartOn: [rules] });
 });

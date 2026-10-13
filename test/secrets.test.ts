@@ -78,9 +78,9 @@ describe("Secret values", () => {
     const env = makeEnv();
     let value = "TOKEN=one\n";
     const secrets = (n: string) => (n === "api.env" ? enc.encode(value) : (() => { throw new Error(`no ${n}`); })());
-    const m = module("m", ({ file, secret, tmpl }) => {
-      file("~/api.env", secret("api.env"));
-      file("~/app.conf", tmpl`url = https://x\n${secret("api.env")}`, { mode: 0o640 });
+    const m = module("m", (ctx) => {
+      ctx.file("~/api.env", ctx.secret("api.env"));
+      ctx.file("~/app.conf", ctx.tmpl`url = https://x\n${ctx.secret("api.env")}`, { mode: 0o640 });
     });
     const r = await env.apply([m], { secrets });
     expect(r.failed).toBe(0);
@@ -97,7 +97,7 @@ describe("Secret values", () => {
     // The first evaluation pass (before decrypting) only records what is needed.
     const g = env.evalHost([m]);
     expect([...g.secrets]).toEqual(["api.env"]);
-    expect(env.evalHost([module("m", ({ secret }) => void secret("../etc/shadow"))]).errors[0]).toContain("invalid secret name");
+    expect(env.evalHost([module("m", (ctx) => void ctx.secret("../etc/shadow"))]).errors[0]).toContain("invalid secret name");
   });
 });
 

@@ -151,7 +151,7 @@ export interface ValidateContext {
   offline?: boolean;
 }
 
-/** A resource found on the machine that the config does not declare (exact package mode). */
+/** A resource found on the machine that the config does not declare (exact package mode, packages.remove). */
 export interface Extraneous {
   id: string;
   scope: Scope;
@@ -166,6 +166,8 @@ export interface ExtraneousOptions {
   keep: string[];
   /** Mark as dependency instead of removing. */
   demote: boolean;
+  /** Names (globs) to remove explicitly (packages.remove): when set, nothing else is extraneous. */
+  only?: string[];
 }
 
 export interface ResourceType<Spec extends ResourceBase = any, Live = any, Meta = any> {
@@ -195,7 +197,7 @@ export interface ResourceType<Spec extends ResourceBase = any, Live = any, Meta 
   apply(changes: Change<Spec, Live, Meta>[], x: Executors, ctx: ApplyContext): Promise<Result<Meta>[]>;
   planDestroy?(id: string, meta: Meta, live: Live | null, ctx: DiffContext): DestroyPlan;
   destroy?(items: { id: string; scope: Scope; meta: Meta }[], x: Executors, ctx: ApplyContext): Promise<Result<null>[]>;
-  /** Exact mode: live resources of this kind that are not declared and should be pruned. */
+  /** Exact mode / packages.remove: live resources of this kind that are not declared and should be pruned. */
   extraneous?(opts: ExtraneousOptions, x: Executors): Promise<Extraneous[]>;
 }
 

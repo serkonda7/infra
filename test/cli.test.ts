@@ -61,12 +61,12 @@ describe("why", () => {
   test("by ID, name or path: declaration sites, dependencies and dependents", async () => {
     const env = makeEnv();
     const g = env.evalHost([
-      module("dev", ({ pkg, unit, user }) => {
-        pkg(["docker"]);
-        unit("docker", { started: true });
-        user.groups(["docker"]);
+      module("dev", (ctx) => {
+        ctx.pkg(["docker"]);
+        ctx.unit("docker", { started: true });
+        ctx.user.groups(["docker"]);
       }),
-      module("other", ({ pkg }) => void pkg(["docker"])),
+      module("other", (ctx) => void ctx.pkg(["docker"])),
     ]);
     g.finalize();
     const ctx = { host: "testhost", home: env.home, repo: env.repo };
@@ -83,8 +83,8 @@ describe("why", () => {
 
   test("paths, and resources only the last generation still owns", async () => {
     const env = makeEnv();
-    await env.apply([module("m", ({ file }) => void file("~/.old", "x"))]);
-    const g = env.evalHost([module("m", ({ file }) => void file("~/.config/a.conf", "a"))]);
+    await env.apply([module("m", (ctx) => void ctx.file("~/.old", "x"))]);
+    const g = env.evalHost([module("m", (ctx) => void ctx.file("~/.config/a.conf", "a"))]);
     g.finalize();
     const ctx = { host: "testhost", home: env.home, repo: env.repo };
     expect(why(g, null, "~/.config/a.conf", ctx).matches.map((m) => m.id)).toEqual([`file:${env.home}/.config/a.conf`]);
@@ -122,7 +122,7 @@ describe("generations", () => {
       if (r.code !== 0) throw new Error(r.stderr);
       return r.stdout.trim();
     };
-    writeConfig(repo, `export default defineConfig({ hosts: { testhost: host({ os: "arch", modules: [module("m", ({ file, link }) => { file("~/out", { source: "content.txt" }); link("~/linked", "content.txt"); })] }) } });`);
+    writeConfig(repo, `export default defineConfig({ hosts: { testhost: host({ os: "arch", modules: [module("m", (ctx) => { ctx.file("~/out", { source: "content.txt" }); ctx.link("~/linked", "content.txt"); })] }) } });`);
     writeFileSync(join(repo, "content.txt"), "one\n");
     await git("init", "-q", "-b", "main");
     await git("add", ".");
@@ -151,7 +151,7 @@ describe("status", () => {
   test("generation, drift, pending .pacnew files, failed units", async () => {
     const env = makeEnv();
     const conf = join(env.sys, "etc/app.conf");
-    writeConfig(env.repo, `export default defineConfig({ hosts: { testhost: host({ os: "arch", modules: [module("m", ({ file }) => { file(${JSON.stringify(conf)}, "v1\\n"); file("~/.rc", "rc\\n"); })] }) } });`);
+    writeConfig(env.repo, `export default defineConfig({ hosts: { testhost: host({ os: "arch", modules: [module("m", (ctx) => { ctx.file(${JSON.stringify(conf)}, "v1\\n"); ctx.file("~/.rc", "rc\\n"); })] }) } });`);
     const engine = { configDir: env.repo, facts: env.facts, x: env.x, stateDir: env.state.dir };
     expect(await runApply({ engine: { ...engine, fast: true } }, quiet)).toBe(0);
 

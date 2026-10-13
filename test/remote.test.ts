@@ -43,11 +43,11 @@ describe("dead-man's switch", () => {
     const env = makeEnv();
     env.systemd.add("sshd.service", "enabled", "active");
     const p = await env.plan([
-      module("m", ({ file, unit }) => {
-        file(sshd(env), "PasswordAuthentication no\n");
-        file(join(env.sys, "etc/motd"), "hi\n");
-        file("~/.ssh/config", "Host *\n");
-        unit("sshd", { started: true, enabled: false });
+      module("m", (ctx) => {
+        ctx.file(sshd(env), "PasswordAuthentication no\n");
+        ctx.file(join(env.sys, "etc/motd"), "hi\n");
+        ctx.file("~/.ssh/config", "Host *\n");
+        ctx.unit("sshd", { started: true, enabled: false });
       }),
     ]);
     const risky = p.items.filter((i): i is ChangeItem => i.op === "change" && isRisky(i)).map((i) => i.id);
@@ -57,11 +57,11 @@ describe("dead-man's switch", () => {
   test("risky changes and their dependents run last, after arming; triggers after that", async () => {
     const env = makeEnv();
     const armed: string[] = [];
-    const m = module("m", ({ file, trigger }) => {
-      const conf = file(sshd(env), "PasswordAuthentication no\n");
-      file(join(env.sys, "etc/after-sshd"), "x\n", { after: [conf] });
-      file(join(env.sys, "etc/motd"), "hi\n");
-      trigger("systemctl reload sshd", { on: [conf] });
+    const m = module("m", (ctx) => {
+      const conf = ctx.file(sshd(env), "PasswordAuthentication no\n");
+      ctx.file(join(env.sys, "etc/after-sshd"), "x\n", { after: [conf] });
+      ctx.file(join(env.sys, "etc/motd"), "hi\n");
+      ctx.trigger("systemctl reload sshd", { on: [conf] });
     });
     const r = await env.apply([m], {
       guard: {
@@ -82,7 +82,7 @@ describe("dead-man's switch", () => {
 
   test("if arming fails, risky changes are not applied", async () => {
     const env = makeEnv();
-    const r = await env.apply([module("m", ({ file }) => void file(sshd(env), "x\n"))], {
+    const r = await env.apply([module("m", (ctx) => void ctx.file(sshd(env), "x\n"))], {
       guard: { risky: isRisky, arm: async () => { throw new Error("no systemd-run"); } },
     });
     expect(r.failed).toBe(1);
@@ -98,9 +98,9 @@ describe("dead-man's switch", () => {
     const created = join(env.sys, "etc/ssh/sshd_config.d/new.conf");
     mkdirSync(join(env.sys, "etc/ssh"), { recursive: true });
     writeFileSync(conf, "Port 22\n", { mode: 0o600 });
-    const m = module("m", ({ file }) => {
-      file(conf, "Port 2222\n");
-      file(created, "X\n");
+    const m = module("m", (ctx) => {
+      ctx.file(conf, "Port 2222\n");
+      ctx.file(created, "X\n");
     });
     const items = (await env.plan([m])).items.filter((i): i is ChangeItem => i.op === "change");
 
@@ -141,7 +141,7 @@ describe("dead-man's switch", () => {
   test("arm reports systemd-run failures", async () => {
     const env = makeEnv();
     const x = new FakeExecutor({ privileged: true, handlers: [(argv) => (argv[0] === "systemd-run" ? fail("Failed to start transient timer unit") : undefined)] });
-    const items = (await env.plan([module("m", ({ file }) => void file(join(env.sys, "etc/ssh/a"), "x"))])).items as ChangeItem[];
+    const items = (await env.plan([module("m", (ctx) => void ctx.file(join(env.sys, "etc/ssh/a"), "x"))])).items as ChangeItem[];
     await expect(new DeadMan(x, 120, join(env.root, "dm")).arm(items)).rejects.toThrow("systemd-run failed: Failed to start transient timer unit");
   });
 });
@@ -160,7 +160,7 @@ describe("remote apply over a fake ssh", () => {
     writeFileSync(join(repo, "rig.config.ts"), `import { defineConfig } from "rig";\nexport default defineConfig({ hosts: { far: () => import("./hosts/far") } });\n`);
     writeFileSync(
       join(repo, "hosts/far.ts"),
-      `import { host, module } from "rig";\nconst m = module("m", ({ file, link, secret }) => {\n  link("~/.config/app", "dotfiles/app");\n  file("~/token", secret("token"));\n});\nexport default host({ os: ${JSON.stringify(gatherFacts().os.family)}, connect: { ssh: "me@far" }, modules: [m] });\n`,
+      `import { host, module } from "rig";\nconst m = module("m", (ctx) => {\n  ctx.link("~/.config/app", "dotfiles/app");\n  ctx.file("~/token", ctx.secret("token"));\n});\nexport default host({ os: ${JSON.stringify(gatherFacts().os.family)}, connect: { ssh: "me@far" }, modules: [m] });\n`,
     );
     writeFileSync(join(repo, "dotfiles/app/conf"), "a\n");
     writeFileSync(join(repo, "unreferenced"), "not shipped\n");

@@ -28,8 +28,8 @@ export default defineConfig({
 import { module } from "rig";
 import { greeting } from "../types/greeting";
 
-export const hello = module("hello", ({ resource, user }) => {
-  resource(greeting, { name: "world", text: "hi", dir: `${user.home}/.greetings` });
+export const hello = module("hello", (ctx) => {
+  ctx.resource(greeting, { name: "world", text: "hi", dir: `${ctx.user.home}/.greetings` });
 });
 ```
 

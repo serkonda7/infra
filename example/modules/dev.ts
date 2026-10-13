@@ -1,32 +1,32 @@
 import { module } from "rig";
 
-export const dev = module("dev", ({ pkg, link, file, exec, unit, user, git, facts, tmpl }) => {
-  pkg(["neovim", "bun", "docker"]);
-  pkg.aur(["visual-studio-code-bin"]);
+export const dev = module("dev", (ctx) => {
+  ctx.pkg(["neovim", "bun", "docker"]);
+  ctx.pkg.aur(["visual-studio-code-bin"]);
 
-  unit("docker", { started: true }); // ordered after the docker package
-  user.groups(["docker"]);
+  ctx.unit("docker", { started: true }); // ordered after the docker package
+  ctx.user.groups(["docker"]);
 
-  link("~/.config/nvim", "dotfiles/nvim"); // whole-dir symlink
+  ctx.link("~/.config/nvim", "dotfiles/nvim"); // whole-dir symlink
 
   // Cloned if missing and kept at the tag; never pulled or reset over local work.
-  git("~/src/neovim", "https://github.com/neovim/neovim.git", { ref: "v0.11.0" });
+  ctx.git("~/src/neovim", "https://github.com/neovim/neovim.git", { ref: "v0.11.0" });
 
-  const gitconfig = file(
+  const gitconfig = ctx.file(
     "~/.gitconfig",
-    tmpl`
+    ctx.tmpl`
       [user]
-        name = ${user.name}
-        email = ${user.email}
+        name = ${ctx.user.name}
+        email = ${ctx.user.email}
       [core]
         editor = nvim
     `,
   );
 
-  exec("git config --global --get core.editor >/dev/null && echo gitconfig ok", {
+  ctx.exec("git config --global --get core.editor >/dev/null && echo gitconfig ok", {
     onChange: [gitconfig],
     asUser: true,
   });
 
-  if (facts.gpu.vendor === "nvidia") pkg(["nvidia-utils"]);
+  if (ctx.facts.gpu.vendor === "nvidia") ctx.pkg(["nvidia-utils"]);
 });

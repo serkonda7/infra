@@ -175,9 +175,9 @@ export async function planAdoptPackages(input: {
     ``,
     `// Adopted from ${input.host} by \`rig adopt packages\` on ${date}.`,
     `// Sort these into modules, then switch the host to packages: { mode: "exact" }.`,
-    `export const adoptedPackages = module("adopted-packages", ({ pkg }) => {`,
-    ...(repo.length ? [`  pkg([`, list(repo), `  ]);`] : []),
-    ...(aur.length ? [`  pkg.aur([`, list(aur), `  ]);`] : []),
+    `export const adoptedPackages = module("adopted-packages", (ctx) => {`,
+    ...(repo.length ? [`  ctx.pkg([`, list(repo), `  ]);`] : []),
+    ...(aur.length ? [`  ctx.pkg.aur([`, list(aur), `  ]);`] : []),
     `});`,
     ``,
   ].join("\n");

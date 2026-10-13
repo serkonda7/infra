@@ -1,6 +1,7 @@
 // Flatpak apps, installed system-wide from a remote (Flathub by default).
 // Same ownership model as the distro packages: rig only removes what it
-// installed, and apps that were there before it are adopted and kept.
+// installed, and apps that were there before it are adopted and kept
+// (unless listed in packages.remove).
 
 import type { Executor, ResourceBase, ResourceType, Result } from "../types.ts";
 import { lines } from "./util.ts";
@@ -111,5 +112,17 @@ export const flatpakType: ResourceType<FlatpakSpec, FlatpakLive, FlatpakMeta> = 
     // Runtimes only the removed apps needed (best effort).
     if (results.some((r) => r.ok)) await flatpak(x.system, ["uninstall", "--system", "-y", "--noninteractive", "--unused"], ctx.verbose);
     return results;
+  },
+
+  // Exact mode never prunes apps; only those listed in packages.remove.
+  async extraneous({ declared, keep, only }, x) {
+    if (!only?.length) return [];
+    const r = await flatpak(x.user, ["list", "--app", "--system", "--columns=application"]).catch(() => ({ code: 127, stdout: "", stderr: "" }));
+    const kept = keep.map((k) => new Bun.Glob(k));
+    const wanted = only.map((k) => new Bun.Glob(k));
+    return (r.code === 0 ? lines(r.stdout) : [])
+      .map((l) => l.split("\t")[0]!)
+      .filter((n) => !declared.has(prefix + n) && !kept.some((g) => g.match(n)) && wanted.some((g) => g.match(n)))
+      .map((n) => ({ id: prefix + n, scope: "system" as const, meta: { installed: true } satisfies FlatpakMeta, display: n }));
   },
 };

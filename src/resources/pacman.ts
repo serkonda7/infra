@@ -156,13 +156,14 @@ function pkgType(b: Backend): ResourceType<PacmanSpec, PacmanLive, PacmanMeta> {
       return results;
     },
 
-    async extraneous({ declared, keep, demote }, x) {
+    async extraneous({ declared, keep, demote, only }, x) {
       const [explicit, foreignOut] = await Promise.all([x.user.run(["pacman", "-Qqe"]), x.user.run(["pacman", "-Qqm"])]);
       const foreign = new Set(lines(foreignOut.stdout));
       const kept = keep.map((k) => new Bun.Glob(k));
+      const wanted = only?.map((k) => new Bun.Glob(k));
       const meta: PacmanMeta = demote ? { markedExplicit: true, extraneous: true } : { installed: true, extraneous: true };
       return lines(explicit.stdout)
-        .filter((n) => b.owns(n, foreign) && !declared.has(prefix + n) && !kept.some((g) => g.match(n)))
+        .filter((n) => b.owns(n, foreign) && !declared.has(prefix + n) && !kept.some((g) => g.match(n)) && (!wanted || wanted.some((g) => g.match(n))))
         .map((n) => ({ id: prefix + n, scope: "system" as const, meta, display: n }));
     },
   };

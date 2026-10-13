@@ -8,9 +8,9 @@ import { summarize } from "../src/plan/plan.ts";
 describe("files", () => {
   test("create, idempotent second run, prune on removal", async () => {
     const env = makeEnv();
-    const m = module("m", ({ file }) => {
-      file("~/.config/app/a.conf", "a = 1\n");
-      file(join(env.sys, "etc/b.conf"), { content: "b\n", mode: 0o600 });
+    const m = module("m", (ctx) => {
+      ctx.file("~/.config/app/a.conf", "a = 1\n");
+      ctx.file(join(env.sys, "etc/b.conf"), { content: "b\n", mode: 0o600 });
     });
     const first = await env.apply([m]);
     expect(ops(first.plan)).toEqual([`create file:${env.home}/.config/app/a.conf`, `create file:${env.sys}/etc/b.conf`]);
@@ -34,7 +34,7 @@ describe("files", () => {
     const env = makeEnv();
     const path = join(env.home, ".gitconfig");
     writeFileSync(path, "[user]\n  name = old\n");
-    const m = module("m", ({ file }) => void file("~/.gitconfig", "[user]\n  name = new\n"));
+    const m = module("m", (ctx) => void ctx.file("~/.gitconfig", "[user]\n  name = new\n"));
     const p = await env.plan([m]);
     const item = p.items[0]!;
     expect(item.op === "change" && item.action).toBe("update");
@@ -49,7 +49,7 @@ describe("files", () => {
   test("refuses to prune a file edited outside rig unless forced", async () => {
     const env = makeEnv();
     const path = join(env.home, "notes.txt");
-    await env.apply([module("m", ({ file }) => void file("~/notes.txt", "rig\n"))]);
+    await env.apply([module("m", (ctx) => void ctx.file("~/notes.txt", "rig\n"))]);
     writeFileSync(path, "my edits\n");
 
     const r = await env.apply([]);
@@ -65,7 +65,7 @@ describe("files", () => {
     const env = makeEnv();
     const path = join(env.home, "same.txt");
     writeFileSync(path, "x\n");
-    const r = await env.apply([module("m", ({ file }) => void file("~/same.txt", "x\n"))]);
+    const r = await env.apply([module("m", (ctx) => void ctx.file("~/same.txt", "x\n"))]);
     expect(ops(r.plan)).toEqual([]);
     expect(r.dirty).toBe(true); // ownership recorded even with no changes
     const gone = await env.apply([]);
@@ -82,9 +82,9 @@ describe("links", () => {
     writeFileSync(join(env.repo, "dotfiles/home/.config/fish/config.fish"), "");
     writeFileSync(join(env.repo, "dotfiles/home/.config/fish/secret.local"), "");
     writeFileSync(join(env.repo, "dotfiles/home/.bashrc"), "");
-    const m = module("m", ({ link }) => {
-      link("~/.config/nvim", "dotfiles/nvim");
-      link.tree("dotfiles/home", "~", { ignore: ["**/*.local"] });
+    const m = module("m", (ctx) => {
+      ctx.link("~/.config/nvim", "dotfiles/nvim");
+      ctx.link.tree("dotfiles/home", "~", { ignore: ["**/*.local"] });
     });
     const r = await env.apply([m]);
     expect(ops(r.plan)).toEqual([
@@ -104,7 +104,7 @@ describe("links", () => {
     const env = makeEnv();
     writeFileSync(join(env.repo, "rc"), "repo\n");
     writeFileSync(join(env.home, ".rc"), "mine\n");
-    const m = module("m", ({ link }) => void link("~/.rc", "rc"));
+    const m = module("m", (ctx) => void ctx.link("~/.rc", "rc"));
     const blocked = await env.apply([m]);
     expect(ops(blocked.plan)).toEqual([`blocked link:${env.home}/.rc`]);
     expect(blocked.generation.status).toBe("partial");
@@ -121,7 +121,7 @@ describe("links", () => {
   test("leaves a link alone if it was retargeted by the user", async () => {
     const env = makeEnv();
     writeFileSync(join(env.repo, "rc"), "");
-    await env.apply([module("m", ({ link }) => void link("~/.rc", "rc"))]);
+    await env.apply([module("m", (ctx) => void ctx.link("~/.rc", "rc"))]);
     const { symlinkSync, unlinkSync } = await import("node:fs");
     unlinkSync(join(env.home, ".rc"));
     symlinkSync("/elsewhere", join(env.home, ".rc"));
@@ -134,9 +134,9 @@ describe("links", () => {
 describe("dirs", () => {
   test("dir is ordered before files inside it; removed only if empty", async () => {
     const env = makeEnv();
-    const m = module("m", ({ dir, file }) => {
-      file(join(env.sys, "opt/app/conf"), "x");
-      dir(join(env.sys, "opt/app"), { mode: 0o750 });
+    const m = module("m", (ctx) => {
+      ctx.file(join(env.sys, "opt/app/conf"), "x");
+      ctx.dir(join(env.sys, "opt/app"), { mode: 0o750 });
     });
     const r = await env.apply([m]);
     expect(r.events.map((e) => e.item.id)).toEqual([`dir:${env.sys}/opt/app`, `file:${env.sys}/opt/app/conf`]);
@@ -151,14 +151,14 @@ describe("packages", () => {
     const env = makeEnv();
     env.pacman.installed.set("htop", true); // installed before rig
     env.pacman.installed.set("fd", false); // installed as a dependency
-    const m = module("m", ({ pkg }) => void pkg(["git", "neovim", "htop", "fd"]));
+    const m = module("m", (ctx) => void ctx.pkg(["git", "neovim", "htop", "fd"]));
     const r = await env.apply([m]);
     expect(ops(r.plan)).toEqual(["create pkg:pacman:git", "create pkg:pacman:neovim", "update pkg:pacman:fd"]);
     const installs = env.system.calls.filter((c) => c[1] === "-S");
     expect(installs).toEqual([["pacman", "-S", "--needed", "--noconfirm", "git", "neovim"]]); // one transaction
     expect(env.pacman.installed.get("fd")).toBe(true);
 
-    const removed = await env.apply([module("m", ({ pkg }) => void pkg(["git"]))]);
+    const removed = await env.apply([module("m", (ctx) => void ctx.pkg(["git"]))]);
     expect(ops(removed.plan)).toEqual(["destroy pkg:pacman:fd", "destroy pkg:pacman:neovim", "forget pkg:pacman:htop"]);
     expect(env.pacman.installed.has("neovim")).toBe(false);
     expect(env.pacman.installed.get("fd")).toBe(false); // demoted back to a dependency
@@ -167,7 +167,7 @@ describe("packages", () => {
 
   test("package still required by others is demoted instead", async () => {
     const env = makeEnv();
-    await env.apply([module("m", ({ pkg }) => void pkg(["git", "ripgrep"]))]);
+    await env.apply([module("m", (ctx) => void ctx.pkg(["git", "ripgrep"]))]);
     env.pacman.required.add("git");
     const r = await env.apply([]);
     expect(r.failed).toBe(0);
@@ -178,9 +178,9 @@ describe("packages", () => {
   test("failed install skips dependents and keeps nothing it didn't own", async () => {
     const env = makeEnv();
     env.pacman.repo.delete("steam"); // validation is skipped in the harness; install fails
-    const m = module("m", ({ pkg, file }) => {
-      pkg(["steam"]);
-      file("~/.steamrc", "x", { after: ["pkg:pacman:steam"] });
+    const m = module("m", (ctx) => {
+      ctx.pkg(["steam"]);
+      ctx.file("~/.steamrc", "x", { after: ["pkg:pacman:steam"] });
     });
     const r = await env.apply([m]);
     expect(r.failed).toBe(2);
@@ -203,11 +203,11 @@ describe("exec", () => {
   test("guards and onChange triggers", async () => {
     const env = makeEnv();
     const m = (content: string) =>
-      module("m", ({ file, exec }) => {
-        const f = file("~/.conf", content);
-        exec("reload-it", { onChange: [f], asUser: true });
-        exec("make-thing", { creates: "~/thing", asUser: true });
-        exec("check-thing", { unless: "true", asUser: true });
+      module("m", (ctx) => {
+        const f = ctx.file("~/.conf", content);
+        ctx.exec("reload-it", { onChange: [f], asUser: true });
+        ctx.exec("make-thing", { creates: "~/thing", asUser: true });
+        ctx.exec("check-thing", { unless: "true", asUser: true });
       });
     const first = await env.apply([m("1")]);
     const ran = () => env.user.calls.filter((c) => c[0] === "sh" && !["true"].includes(c[2]!)).map((c) => c[2]);
@@ -225,13 +225,13 @@ describe("exec", () => {
 describe("filters", () => {
   test("rig dot only touches user scope and carries system resources over", async () => {
     const env = makeEnv();
-    const full = module("m", ({ file, pkg }) => {
-      pkg(["git"]);
-      file("~/.a", "a");
-      file(join(env.sys, "etc/x"), "x");
+    const full = module("m", (ctx) => {
+      ctx.pkg(["git"]);
+      ctx.file("~/.a", "a");
+      ctx.file(join(env.sys, "etc/x"), "x");
     });
     await env.apply([full]);
-    const dot = await env.apply([module("m", ({ file }) => void file("~/.a", "a2"))], { userOnly: true });
+    const dot = await env.apply([module("m", (ctx) => void ctx.file("~/.a", "a2"))], { userOnly: true });
     expect(ops(dot.plan)).toEqual([`update file:${env.home}/.a`]); // system file & package not pruned
     expect(Object.keys(dot.generation.resources)).toContain(`file:${env.sys}/etc/x`);
     expect(Object.keys(dot.generation.resources)).toContain("pkg:pacman:git");
@@ -240,8 +240,8 @@ describe("filters", () => {
 
   test("--only matches module names", async () => {
     const env = makeEnv();
-    const a = module("a", ({ file }) => void file("~/.a", "a"));
-    const b = module("b", ({ file }) => void file("~/.b", "b"));
+    const a = module("a", (ctx) => void ctx.file("~/.a", "a"));
+    const b = module("b", (ctx) => void ctx.file("~/.b", "b"));
     const r = await env.apply([a, b], { only: "b" });
     expect(ops(r.plan)).toEqual([`create file:${env.home}/.b`]);
   });
@@ -252,12 +252,12 @@ describe("evaluation", () => {
     const env = makeEnv();
     const { evaluate } = require("../src/config/context.ts");
     const { host } = require("../src/config/define.ts");
-    const ok = evaluate(host({ os: "arch", modules: [module("a", ({ pkg }) => void pkg(["git"])), module("b", ({ pkg }) => void pkg(["git"]))] }), { facts: env.facts, repo: env.repo, hostName: "t" });
+    const ok = evaluate(host({ os: "arch", modules: [module("a", (ctx) => void ctx.pkg(["git"])), module("b", (ctx) => void ctx.pkg(["git"]))] }), { facts: env.facts, repo: env.repo, hostName: "t" });
     ok.finalize();
     expect(ok.errors).toEqual([]);
     expect(ok.decls.get("pkg:pacman:git").provenance.map((p: any) => p.modules[0])).toEqual(["a", "b"]);
 
-    const bad = evaluate(host({ os: "arch", modules: [module("a", ({ file }) => void file("~/x", "1")), module("b", ({ file }) => void file("~/x", "2"))] }), { facts: env.facts, repo: env.repo, hostName: "t" });
+    const bad = evaluate(host({ os: "arch", modules: [module("a", (ctx) => void ctx.file("~/x", "1")), module("b", (ctx) => void ctx.file("~/x", "2"))] }), { facts: env.facts, repo: env.repo, hostName: "t" });
     expect(bad.errors[0]).toContain("conflicting declarations");
     expect(bad.errors[0]).toMatch(/a \(\S*engine\.test\.ts:\d+\)/);
   });
@@ -271,12 +271,12 @@ describe("evaluation", () => {
       host({
         os: "arch",
         modules: [
-          module("m", ({ file, link }) => {
-            file("~/a", "a", { after: [`file:${env.home}/b`] });
-            file("~/b", "b", { after: [`file:${env.home}/a`] });
-            file("~/c", "c", { after: ["pkg:pacman:missing"] });
-            link("~/.config/nvim", "nvim");
-            file("~/.config/nvim/init.lua", "x");
+          module("m", (ctx) => {
+            ctx.file("~/a", "a", { after: [`file:${env.home}/b`] });
+            ctx.file("~/b", "b", { after: [`file:${env.home}/a`] });
+            ctx.file("~/c", "c", { after: ["pkg:pacman:missing"] });
+            ctx.link("~/.config/nvim", "nvim");
+            ctx.file("~/.config/nvim/init.lua", "x");
           }),
         ],
       }),
@@ -291,7 +291,7 @@ describe("evaluation", () => {
 
   test("summary counts", async () => {
     const env = makeEnv();
-    const p = await env.plan([module("m", ({ file }) => void file("~/a", "a"))]);
+    const p = await env.plan([module("m", (ctx) => void ctx.file("~/a", "a"))]);
     expect(summarize(p)).toMatchObject({ add: 1, change: 0, destroy: 0, actionable: true });
   });
 });

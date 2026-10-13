@@ -19,7 +19,7 @@ describe("apt", () => {
     const env = makeEnv({ os: "debian" });
     env.apt.installed.set("htop", true); // installed by hand before rig
     env.apt.installed.set("ripgrep", false); // pulled in as a dependency
-    const m = module("m", ({ pkg }) => void pkg(["git", "fd", "htop", "ripgrep", { arch: "base-devel", debian: "build-essential" }]));
+    const m = module("m", (ctx) => void ctx.pkg(["git", "fd", "htop", "ripgrep", { arch: "base-devel", debian: "build-essential" }]));
 
     const r = await env.apply([m]);
     expect(ops(r.plan)).toEqual(["create pkg:apt:build-essential", "create pkg:apt:fd-find", "create pkg:apt:git", "update pkg:apt:ripgrep"]);
@@ -44,7 +44,7 @@ describe("apt", () => {
 
   test("a package still required by others is marked automatic instead", async () => {
     const env = makeEnv({ os: "debian" });
-    await env.apply([module("m", ({ pkg }) => void pkg(["git", "htop"]))]);
+    await env.apply([module("m", (ctx) => void ctx.pkg(["git", "htop"]))]);
     env.apt.required.add("git");
     const r = await env.apply([]);
     expect(r.failed).toBe(0);
@@ -57,7 +57,7 @@ describe("apt", () => {
     const env = makeEnv({ os: "debian" });
     env.apt.available.delete("caddy");
     env.apt.pending.add("caddy");
-    const r = await env.apply([module("m", ({ pkg }) => void pkg(["caddy"]))]);
+    const r = await env.apply([module("m", (ctx) => void ctx.pkg(["caddy"]))]);
     expect(r.failed).toBe(0);
     expect(mutations(env.system.calls)).toEqual([`${APT} install caddy`, `${APT} update`, `${APT} install caddy`]);
   });
@@ -67,9 +67,9 @@ describe("apt", () => {
     env.apt.available.delete("caddy");
     env.apt.pending.add("caddy");
     const key = "-----BEGIN PGP PUBLIC KEY BLOCK-----\nabc\n-----END PGP PUBLIC KEY BLOCK-----\n";
-    const m = module("caddy", ({ pkg }) => {
-      pkg(["caddy"]);
-      pkg.repo("caddy", { uris: "https://dl.cloudsmith.io/public/caddy/stable/deb/debian", suites: "any-version", key });
+    const m = module("caddy", (ctx) => {
+      ctx.pkg(["caddy"]);
+      ctx.pkg.repo("caddy", { uris: "https://dl.cloudsmith.io/public/caddy/stable/deb/debian", suites: "any-version", key });
     });
     const r = await env.apply([m]);
     expect(r.failed).toBe(0);
@@ -86,19 +86,19 @@ describe("apt", () => {
 
   test("pkg.repo defaults suites to the release codename", () => {
     const env = makeEnv({ os: "debian" });
-    const g = env.evalHost([module("m", ({ pkg }) => void pkg.repo("x", { uris: "https://example.org/debian" }))]);
+    const g = env.evalHost([module("m", (ctx) => void ctx.pkg.repo("x", { uris: "https://example.org/debian" }))]);
     const spec = g.decls.get(`file:${join(env.sys, "etc/apt/sources.list.d/x.sources")}`)!.spec;
     expect(new TextDecoder().decode(spec.data)).toContain("Suites: trixie\n");
-    expect(env.evalHost([module("m", ({ pkg }) => void pkg.aur(["yay-bin"]))]).errors[0]).toContain("AUR packages need an Arch-based host");
+    expect(env.evalHost([module("m", (ctx) => void ctx.pkg.aur(["yay-bin"]))]).errors[0]).toContain("AUR packages need an Arch-based host");
   });
 
   test("exact mode prunes undeclared manual packages, but not the base system or protected ones", async () => {
     const env = makeEnv({ os: "debian" });
     for (const n of ["bash", "apt", "htop", "linux-image-amd64", "openssh-server", "nano"]) env.apt.installed.set(n, true);
-    const r = await env.apply([module("m", ({ pkg }) => void pkg(["htop"]))], { packages: { mode: "exact", keep: ["nan*"] } });
+    const r = await env.apply([module("m", (ctx) => void ctx.pkg(["htop"]))], { packages: { mode: "exact", keep: ["nan*"] } });
     expect(ops(r.plan)).toEqual([]);
     env.apt.installed.set("cowsay", true);
-    const p = await env.plan([module("m", ({ pkg }) => void pkg(["htop"]))], { packages: { mode: "exact" } });
+    const p = await env.plan([module("m", (ctx) => void ctx.pkg(["htop"]))], { packages: { mode: "exact" } });
     expect(ops(p)).toEqual(["destroy pkg:apt:cowsay", "destroy pkg:apt:nano"]);
   });
 
@@ -115,7 +115,7 @@ describe("apt", () => {
 
   test("kernelParams on Debian GRUB regenerate with update-grub", () => {
     const env = makeEnv({ os: "debian" });
-    const g = env.evalHost([module("m", ({ kernelParams }) => void kernelParams(["quiet"]))]);
+    const g = env.evalHost([module("m", (ctx) => void ctx.kernelParams(["quiet"]))]);
     const trigger = [...g.decls.values()].find((d) => d.type.kind === "trigger")!;
     expect(trigger.spec.cmd).toBe("update-grub");
   });

@@ -53,7 +53,7 @@ describe("plugin resource types", () => {
   test("declared with ctx.resource, planned, applied and pruned like built-ins", async () => {
     const env = makeEnv({ types: [greeting] });
     const dir = join(env.home, ".greetings");
-    const m = (text: string) => module("hello", ({ resource }) => void resource(greeting, { name: "world", text, dir }));
+    const m = (text: string) => module("hello", (ctx) => void ctx.resource(greeting, { name: "world", text, dir }));
 
     const r = await env.apply([m("hi")]);
     expect(ops(r.plan)).toEqual(["create greeting:world"]);
@@ -70,19 +70,19 @@ describe("plugin resource types", () => {
   test("default equality merges identical declarations and reports different ones", () => {
     const env = makeEnv({ types: [greeting] });
     const spec = { name: "w", text: "a", dir: "/x" };
-    const same = env.evalHost([module("a", ({ resource }) => void resource(greeting, spec)), module("b", ({ resource }) => void resource(greeting, { ...spec }, { after: [] }))]);
+    const same = env.evalHost([module("a", (ctx) => void ctx.resource(greeting, spec)), module("b", (ctx) => void ctx.resource(greeting, { ...spec }, { after: [] }))]);
     expect(same.errors).toEqual([]);
-    const diff = env.evalHost([module("a", ({ resource }) => void resource(greeting, spec)), module("b", ({ resource }) => void resource(greeting, { ...spec, text: "b" }))]);
+    const diff = env.evalHost([module("a", (ctx) => void ctx.resource(greeting, spec)), module("b", (ctx) => void ctx.resource(greeting, { ...spec, text: "b" }))]);
     expect(diff.errors[0]).toContain("conflicting declarations of greeting:w");
   });
 
   test("unregistered types, bad IDs and bad kinds are reported", () => {
     const env = makeEnv();
-    const g = env.evalHost([module("m", ({ resource }) => void resource(greeting, { name: "w", text: "", dir: "/x" }))]);
+    const g = env.evalHost([module("m", (ctx) => void ctx.resource(greeting, { name: "w", text: "", dir: "/x" }))]);
     expect(g.errors[0]).toContain('resource type "greeting" is not registered — add it to defineConfig({ types: [...] })');
 
     const sloppy = defineType<GreetingSpec>({ ...greeting, kind: "greet", id: (s: GreetingSpec) => s.name } as any);
-    const g2 = makeEnv({ types: [sloppy] }).evalHost([module("m", ({ resource }) => void resource(sloppy, { name: "w", text: "", dir: "/x" }))]);
+    const g2 = makeEnv({ types: [sloppy] }).evalHost([module("m", (ctx) => void ctx.resource(sloppy, { name: "w", text: "", dir: "/x" }))]);
     expect(g2.errors[0]).toContain('produced the ID "w"; IDs must start with "greet:"');
 
     expect(checkTypes([greeting, greeting])).toEqual([expect.stringContaining('"greeting" is defined twice')]);

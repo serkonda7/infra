@@ -6,6 +6,6 @@ import { kde } from "../modules/desktop/kde";
 
 export default host({
   os: "arch", // family; CachyOS detected via facts
-  packages: { mode: "additive" },
+  packages: { mode: "additive", remove: ["nano"] },
   modules: [base, dev, gaming({ steam: true, gamescope: true }), kde({ flatpaks: ["org.mozilla.firefox", "org.kde.krita"] })],
 });

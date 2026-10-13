@@ -1,4 +1,4 @@
-import type { ChangeAction, Change, Executors, Facts, ResourceType, Scope } from "../types.ts";
+import type { ChangeAction, Change, Executors, ExtraneousOptions, Facts, ResourceType, Scope } from "../types.ts";
 import { pick } from "../types.ts";
 import type { Decl, Graph } from "../graph/graph.ts";
 import type { GenEntry, Generation } from "../state/state.ts";
@@ -42,6 +42,8 @@ export interface PlanInput {
   filter?: (r: { id: string; scope: Scope; decl?: Decl }) => boolean;
   /** Exact package mode: undeclared explicit packages are pruned too. */
   exact?: { keep: string[]; demote: boolean };
+  /** packages.remove: globs of undeclared packages to remove in any mode, even ones rig didn't install. */
+  remove?: { names: string[]; demote: boolean };
 }
 
 export async function makePlan(input: PlanInput): Promise<Plan> {
@@ -61,18 +63,38 @@ export async function makePlan(input: PlanInput): Promise<Plan> {
   }
 
   const warnings = [...graph.warnings];
-  if (input.exact) {
-    const declared = new Set(graph.decls.keys());
-    let extra = 0;
+  const declared = new Set(graph.decls.keys());
+  /** Queue undeclared live packages for removal; `own` also takes over adopted ones from the previous generation. */
+  const prune = async (opts: Omit<ExtraneousOptions, "declared">, own: boolean) => {
+    let n = 0;
     for (const type of types.all) {
       if (!type.extraneous) continue;
-      for (const e of await type.extraneous({ declared, ...input.exact }, x)) {
-        if (prev?.resources[e.id] || !filter({ id: e.id, scope: e.scope })) continue;
+      for (const e of await type.extraneous({ declared, ...opts }, x)) {
+        if (!filter({ id: e.id, scope: e.scope })) continue;
+        const queued = destroys.find(([id]) => id === e.id)?.[1];
+        if (queued) {
+          // Adopted earlier, so planDestroy would keep it; packages.remove says otherwise.
+          if (own && !(queued.meta as { installed?: boolean } | undefined)?.installed) queued.meta = e.meta;
+          continue;
+        }
+        if (prev?.resources[e.id]) continue;
         destroys.push([e.id, { kind: type.kind, scope: e.scope, meta: e.meta, display: e.display }]);
-        extra++;
+        n++;
       }
     }
-    if (extra) warnings.push(`exact package mode: ${extra} undeclared package${extra > 1 ? "s" : ""} will be ${input.exact.demote ? "marked as dependencies" : "removed"}`);
+    return n;
+  };
+  const s = (n: number) => (n > 1 ? "s" : "");
+  if (input.exact) {
+    const extra = await prune(input.exact, false);
+    if (extra) warnings.push(`exact package mode: ${extra} undeclared package${s(extra)} will be ${input.exact.demote ? "marked as dependencies" : "removed"}`);
+  }
+  if (input.remove?.names.length) {
+    const globs = input.remove.names.map((k) => new Bun.Glob(k));
+    for (const d of graph.decls.values())
+      if (d.type.kind.startsWith("pkg:") && globs.some((g) => g.match(d.type.display(d.id, d.spec, { home, repo: input.repo }))))
+        warnings.push(`${d.id} is declared but matches packages.remove; kept`);
+    await prune({ keep: ["base"], demote: input.remove.demote, only: input.remove.names }, true);
   }
 
   // Batched reads, one call per resource type.

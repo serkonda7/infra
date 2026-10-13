@@ -43,8 +43,10 @@ export interface HostDef {
   /**
    * "additive" (default) only removes packages rig installed. "exact" also removes every explicitly
    * installed package that isn't declared, except `base` and the `keep` globs.
+   * `remove` globs (package names or Flatpak app IDs) are removed in either mode, even when they
+   * were installed before rig; declared packages always win.
    */
-  packages?: { mode?: "additive" | "exact"; keep?: string[] };
+  packages?: { mode?: "additive" | "exact"; keep?: string[]; remove?: string[] };
   /** Overrides defaults.snapshots for this host. */
   snapshots?: SnapshotSetting;
   /** Apply this host over SSH (agentless push) instead of locally. */

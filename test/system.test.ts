@@ -16,11 +16,11 @@ describe("triggers & sysctl", () => {
   test("sysctl values merge into one file; sysctl --system runs once, at the end", async () => {
     const env = makeEnv();
     const conf = join(env.sys, "etc/sysctl.d/90-rig.conf");
-    const a = module("a", ({ sysctl, file }) => {
-      sysctl({ "vm.swappiness": 10 });
-      file("~/.later", "x");
+    const a = module("a", (ctx) => {
+      ctx.sysctl({ "vm.swappiness": 10 });
+      ctx.file("~/.later", "x");
     });
-    const b = module("b", ({ sysctl }) => void sysctl({ "vm.max_map_count": 2147483642 }));
+    const b = module("b", (ctx) => void ctx.sysctl({ "vm.max_map_count": 2147483642 }));
     const r = await env.apply([a, b]);
     expect(r.failed).toBe(0);
     expect(readFileSync(conf, "utf8")).toBe("# Managed by rig — merged from sysctl() calls.\nvm.max_map_count = 2147483642\nvm.swappiness = 10\n");
@@ -35,16 +35,16 @@ describe("triggers & sysctl", () => {
 
   test("conflicting sysctl values name the other site", () => {
     const env = makeEnv();
-    const g = env.evalHost([module("a", ({ sysctl }) => void sysctl({ "vm.swappiness": 10 })), module("b", ({ sysctl }) => void sysctl({ "vm.swappiness": 60 }))]);
+    const g = env.evalHost([module("a", (ctx) => void ctx.sysctl({ "vm.swappiness": 10 })), module("b", (ctx) => void ctx.sysctl({ "vm.swappiness": 60 }))]);
     expect(g.errors[0]).toMatch(/vm\.swappiness = 60 conflicts with 10 from a \(\S+system\.test\.ts:\d+\)/);
   });
 
   test("trigger declared twice merges its subscriptions and fires once", async () => {
     const env = makeEnv();
     const m = (v: string) =>
-      module("m", ({ file, trigger }) => {
-        trigger("reload-a", { on: [file("~/a", v)], asUser: true });
-        trigger("reload-a", { on: [file("~/b", "b")], asUser: true });
+      module("m", (ctx) => {
+        ctx.trigger("reload-a", { on: [ctx.file("~/a", v)], asUser: true });
+        ctx.trigger("reload-a", { on: [ctx.file("~/b", "b")], asUser: true });
       });
     await env.apply([m("1")]);
     expect(env.user.calls.filter((c) => c[2] === "reload-a")).toHaveLength(1);
@@ -60,10 +60,10 @@ describe("units", () => {
     const env = makeEnv();
     env.systemd.add("docker.service");
     env.systemd.add("sshd.service", "enabled", "active"); // already on before rig
-    const m = module("dev", ({ pkg, unit }) => {
-      pkg(["docker"]);
-      unit("docker", { started: true });
-      unit("sshd.service", { started: true });
+    const m = module("dev", (ctx) => {
+      ctx.pkg(["docker"]);
+      ctx.unit("docker", { started: true });
+      ctx.unit("sshd.service", { started: true });
     });
     const r = await env.apply([m]);
     expect(ops(r.plan)).toEqual(["create pkg:pacman:docker", "update unit:system:docker.service"]);
@@ -80,10 +80,10 @@ describe("units", () => {
   test("unit.define writes the file, reloads before enabling, restartOn fires at the end", async () => {
     const env = makeEnv();
     const m = (exec: string) =>
-      module("svc", ({ unit, file }) => {
-        const conf = file(join(env.sys, "etc/app.conf"), "x");
-        unit.define("app.service", `[Service]\nExecStart=${exec}\n[Install]\nWantedBy=multi-user.target\n`);
-        unit("app", { started: true, restartOn: [conf] });
+      module("svc", (ctx) => {
+        const conf = ctx.file(join(env.sys, "etc/app.conf"), "x");
+        ctx.unit.define("app.service", `[Service]\nExecStart=${exec}\n[Install]\nWantedBy=multi-user.target\n`);
+        ctx.unit("app", { started: true, restartOn: [conf] });
       });
     env.systemd.add("app.service"); // what systemd would see after the reload
     const r = await env.apply([m("/bin/app")]);
@@ -102,7 +102,7 @@ describe("units", () => {
     const env = makeEnv();
     env.systemd.add("syncthing.service", "disabled", "inactive", true);
     env.systemd.add("bad.service", "masked");
-    const r = await env.apply([module("m", ({ unit }) => (unit("syncthing", { user: true, started: true }), void unit("bad")))]);
+    const r = await env.apply([module("m", (ctx) => (ctx.unit("syncthing", { user: true, started: true }), void ctx.unit("bad")))]);
     expect(env.user.calls.map((c) => c.join(" "))).toContain("systemctl --user enable -- syncthing.service");
     expect(ops(r.plan)).toContain("blocked unit:system:bad.service");
   });
@@ -112,9 +112,9 @@ describe("accounts", () => {
   test("user.groups batches usermod, comes after the package that creates the group, and is pruned", async () => {
     const env = makeEnv();
     env.accounts.groups.set("docker", { gid: 970, members: [] });
-    const m = module("dev", ({ pkg, user }) => {
-      pkg(["docker"]);
-      user.groups(["docker", "wheel"]);
+    const m = module("dev", (ctx) => {
+      ctx.pkg(["docker"]);
+      ctx.user.groups(["docker", "wheel"]);
     });
     const r = await env.apply([m]);
     expect(ops(r.plan)).toEqual(["create member:tester:docker", "create pkg:pacman:docker"]); // wheel: already a member
@@ -130,9 +130,9 @@ describe("accounts", () => {
   test("accounts and groups are created, but only deleted with prune: true", async () => {
     const env = makeEnv();
     const m = (prune: boolean) =>
-      module("srv", ({ user, group }) => {
-        group("media", { system: true, prune });
-        user("jelly", { system: true, shell: "/usr/bin/nologin", groups: ["media"], prune });
+      module("srv", (ctx) => {
+        ctx.group("media", { system: true, prune });
+        ctx.user("jelly", { system: true, shell: "/usr/bin/nologin", groups: ["media"], prune });
       });
     const r = await env.apply([m(false)]);
     expect(r.failed).toBe(0);
@@ -149,7 +149,7 @@ describe("accounts", () => {
 
   test("shell change is restored on destroy", async () => {
     const env = makeEnv();
-    await env.apply([module("m", ({ user }) => void user("tester", { shell: "/usr/bin/fish" }))]);
+    await env.apply([module("m", (ctx) => void ctx.user("tester", { shell: "/usr/bin/fish" }))]);
     expect(env.accounts.users.get("tester")!.shell).toBe("/usr/bin/fish");
     await env.apply([]);
     expect(env.accounts.users.get("tester")!.shell).toBe("/bin/bash");
@@ -173,10 +173,10 @@ describe("lineInFile", () => {
     const path = join(env.sys, "etc/pacman.conf");
     mkdirSync(join(env.sys, "etc"), { recursive: true });
     writeFileSync(path, "[options]\n#Color\n#ParallelDownloads = 5\n");
-    const m = module("m", ({ lineInFile }) => {
-      lineInFile(path, { line: "Color", match: /^#?Color$/ });
-      lineInFile(path, { line: "ParallelDownloads = 10", match: /^#?ParallelDownloads/ });
-      lineInFile(path, { block: "ILoveCandy", key: "candy" });
+    const m = module("m", (ctx) => {
+      ctx.lineInFile(path, { line: "Color", match: /^#?Color$/ });
+      ctx.lineInFile(path, { line: "ParallelDownloads = 10", match: /^#?ParallelDownloads/ });
+      ctx.lineInFile(path, { block: "ILoveCandy", key: "candy" });
     });
     const r = await env.apply([m]);
     expect(r.failed).toBe(0);
@@ -189,11 +189,11 @@ describe("lineInFile", () => {
   test("a line that was already there is kept on removal; a fully managed path can't also be edited", async () => {
     const env = makeEnv();
     writeFileSync(join(env.home, ".profile"), "export A=1\n");
-    await env.apply([module("m", ({ lineInFile }) => void lineInFile("~/.profile", "export A=1"))]);
+    await env.apply([module("m", (ctx) => void ctx.lineInFile("~/.profile", "export A=1"))]);
     await env.apply([]);
     expect(readFileSync(join(env.home, ".profile"), "utf8")).toBe("export A=1\n");
 
-    const g = env.evalHost([module("m", ({ file, lineInFile }) => (file("~/x", "a"), void lineInFile("~/x", "b")))]);
+    const g = env.evalHost([module("m", (ctx) => (ctx.file("~/x", "a"), void ctx.lineInFile("~/x", "b")))]);
     g.finalize();
     expect(g.errors.join()).toContain("fully managed as file:");
   });
@@ -216,9 +216,9 @@ describe("pacman repos", () => {
     mkdirSync(join(env.sys, "etc"), { recursive: true });
     writeFileSync(path, conf);
     env.pacman.repos = ["core", "extra"];
-    const m = module("m", ({ pkg }) => {
-      pkg.repo("cachyos", { include: "/etc/pacman.d/cachyos-mirrorlist", position: "first", keys: ["F3B607488DB35A47"], keyserver: "keyserver.ubuntu.com" });
-      pkg(["git"]);
+    const m = module("m", (ctx) => {
+      ctx.pkg.repo("cachyos", { include: "/etc/pacman.d/cachyos-mirrorlist", position: "first", keys: ["F3B607488DB35A47"], keyserver: "keyserver.ubuntu.com" });
+      ctx.pkg(["git"]);
     });
     const r = await env.apply([m]);
     expect(r.failed).toBe(0);
@@ -230,7 +230,7 @@ describe("pacman repos", () => {
       "pacman -Su --needed --noconfirm git",
     ]);
     expect(ops(await env.plan([m]))).toEqual([]);
-    await env.apply([module("m", ({ pkg }) => void pkg(["git"]))]);
+    await env.apply([module("m", (ctx) => void ctx.pkg(["git"]))]);
     expect(readFileSync(path, "utf8")).toBe(conf);
   });
 });
@@ -238,7 +238,7 @@ describe("pacman repos", () => {
 describe("AUR", () => {
   test("bootstraps paru, builds as the user, depends on base-devel", async () => {
     const env = makeEnv();
-    const m = module("m", ({ pkg }) => void pkg.aur(["visual-studio-code-bin"]));
+    const m = module("m", (ctx) => void ctx.pkg.aur(["visual-studio-code-bin"]));
     const r = await env.apply([m]);
     expect(r.failed).toBe(0);
     expect(ops(r.plan)).toEqual(["create pkg:aur:visual-studio-code-bin", "create pkg:pacman:base-devel"]);
@@ -262,7 +262,7 @@ describe("exact package mode", () => {
     for (const n of ["base", "git", "htop", "linux-cachyos", "yay-bin"]) env.pacman.installed.set(n, true);
     env.pacman.installed.set("fd", false); // dependency: not considered
     env.pacman.foreign.add("yay-bin");
-    const m = module("m", ({ pkg }) => void pkg(["git"]));
+    const m = module("m", (ctx) => void ctx.pkg(["git"]));
     const p = await env.plan([m], { packages: { mode: "exact", keep: ["linux-*"] } });
     expect(ops(p)).toEqual(["destroy pkg:aur:yay-bin", "destroy pkg:pacman:htop"]);
     expect(p.warnings.join()).toContain("2 undeclared packages will be removed");
@@ -277,16 +277,52 @@ describe("exact package mode", () => {
   });
 });
 
+describe("packages.remove", () => {
+  test("additive mode removes listed packages and apps, even ones installed before rig", async () => {
+    const env = makeEnv();
+    for (const n of ["base", "git", "htop", "nano", "vim", "yay-bin"]) env.pacman.installed.set(n, true);
+    env.pacman.installed.set("fd", false); // dependency: never explicit, not touched
+    env.pacman.foreign.add("yay-bin");
+    env.flatpak.installed.set("org.kde.krita", "flathub");
+    env.flatpak.installed.set("org.mozilla.firefox", "flathub");
+    const m = module("m", (ctx) => void ctx.pkg(["git"]));
+    const packages = { remove: ["nano", "yay-*", "fd", "git", "base", "org.kde.krita"] };
+    const p = await env.plan([m], { packages });
+    expect(ops(p)).toEqual(["destroy pkg:aur:yay-bin", "destroy pkg:flatpak:org.kde.krita", "destroy pkg:pacman:nano"]);
+    expect(p.warnings).toContain("pkg:pacman:git is declared but matches packages.remove; kept");
+
+    const r = await env.apply([m], { packages });
+    expect(r.failed).toBe(0);
+    expect(env.pacman.installed.has("nano")).toBe(false);
+    expect(env.pacman.installed.has("yay-bin")).toBe(false);
+    expect(env.flatpak.installed.has("org.kde.krita")).toBe(false);
+    for (const n of ["git", "htop", "vim", "base"]) expect(env.pacman.installed.get(n)).toBe(true);
+    expect(env.pacman.installed.get("fd")).toBe(false);
+    expect(env.flatpak.installed.has("org.mozilla.firefox")).toBe(true);
+    expect(ops(await env.plan([m], { packages }))).toEqual([]);
+  });
+
+  test("takes over packages an earlier generation adopted", async () => {
+    const env = makeEnv();
+    env.pacman.installed.set("htop", true); // installed before rig, then declared: adopted
+    await env.apply([module("m", (ctx) => void ctx.pkg(["htop"]))]);
+    const p = await env.plan([], { packages: { remove: ["htop"] } });
+    expect(ops(p)).toEqual(["destroy pkg:pacman:htop"]);
+    await env.apply([], { packages: { remove: ["htop"] }, demote: true });
+    expect(env.pacman.installed.get("htop")).toBe(false);
+  });
+});
+
 describe("kernelParams", () => {
   test("merged into a block in /etc/default/limine; kernel packages also regenerate entries", async () => {
     const env = makeEnv();
     const conf = join(env.sys, "etc/default/limine");
     mkdirSync(join(env.sys, "etc/default"), { recursive: true });
     writeFileSync(conf, 'KERNEL_CMDLINE[default]+="quiet rw"\n');
-    const m = module("m", ({ kernelParams, pkg }) => {
-      kernelParams(["nowatchdog"]);
-      kernelParams(["zswap.enabled=0", "nowatchdog"]);
-      pkg(["linux-cachyos"]);
+    const m = module("m", (ctx) => {
+      ctx.kernelParams(["nowatchdog"]);
+      ctx.kernelParams(["zswap.enabled=0", "nowatchdog"]);
+      ctx.pkg(["linux-cachyos"]);
     });
     const g = env.evalHost([m]);
     const trig = [...g.decls.values()].find((d) => d.type.kind === "trigger")!;
@@ -302,7 +338,7 @@ describe("kernelParams", () => {
   test("unsupported boot loader is an evaluation error", () => {
     const env = makeEnv();
     env.facts.boot.loader = "unknown";
-    const g = env.evalHost([module("m", ({ kernelParams }) => void kernelParams(["quiet"]))]);
+    const g = env.evalHost([module("m", (ctx) => void ctx.kernelParams(["quiet"]))]);
     expect(g.errors[0]).toContain('unsupported boot loader "unknown"');
   });
 });
@@ -358,6 +394,6 @@ test("adopt packages writes undeclared packages as a module", async () => {
   const a = await planAdoptPackages({ repo: env.repo, host: "zephyr", declared: new Set(["pkg:pacman:git"]), keep: ["base"], x: env.x, date: "2026-10-13" });
   expect(a).toMatchObject({ explicit: 4, declared: 1, kept: 1, repo: ["htop"], aur: ["yay-bin"] });
   expect(a.file).toBe(join(env.repo, "modules/_adopted/zephyr-packages.ts"));
-  expect(a.source).toContain(`  pkg([\n    "htop",\n  ]);\n  pkg.aur([\n    "yay-bin",\n  ]);`);
+  expect(a.source).toContain(`  ctx.pkg([\n    "htop",\n  ]);\n  ctx.pkg.aur([\n    "yay-bin",\n  ]);`);
   expect(existsSync(a.file)).toBe(false); // planning only
 });

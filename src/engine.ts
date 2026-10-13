@@ -31,7 +31,7 @@ export interface EngineOptions {
   only?: string;
   /** Skip checks that need subprocesses (package-name validation). */
   fast?: boolean;
-  /** Exact package mode: mark undeclared packages as dependencies instead of removing them. */
+  /** Exact package mode / packages.remove: mark undeclared packages as dependencies instead of removing them. */
   demote?: boolean;
   facts?: Facts;
   x?: Executors;
@@ -212,6 +212,7 @@ export async function plan(p: Prepared, opts: EngineOptions): Promise<Plan> {
     force: opts.force,
     filter: makeFilter(opts),
     exact: p.hostDef.packages?.mode === "exact" ? { keep: ["base", ...(p.hostDef.packages.keep ?? [])], demote: opts.demote ?? false } : undefined,
+    remove: p.hostDef.packages?.remove ? { names: p.hostDef.packages.remove, demote: opts.demote ?? false } : undefined,
   });
 }
 

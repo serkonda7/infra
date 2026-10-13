@@ -148,7 +148,7 @@ export const aptType: ResourceType<PacmanSpec, PacmanLive, PacmanMeta> = {
     return results;
   },
 
-  async extraneous({ declared, keep, demote }, x) {
+  async extraneous({ declared, keep, demote, only }, x) {
     const [man, prio] = await Promise.all([
       manual(x.user),
       x.user.run(["dpkg-query", "-W", "-f", "${Package}\t${Priority}\n"], { env: ENV }),
@@ -161,9 +161,10 @@ export const aptType: ResourceType<PacmanSpec, PacmanLive, PacmanMeta> = {
         .map(([n]) => n!),
     );
     const kept = [...keep, ...APT_PROTECTED].map((k) => new Bun.Glob(k));
+    const wanted = only?.map((k) => new Bun.Glob(k));
     const meta: PacmanMeta = demote ? { markedExplicit: true, extraneous: true } : { installed: true, extraneous: true };
     return [...man]
-      .filter((n) => !base.has(n) && !declared.has(prefix + n) && !kept.some((g) => g.match(n)))
+      .filter((n) => !base.has(n) && !declared.has(prefix + n) && !kept.some((g) => g.match(n)) && (!wanted || wanted.some((g) => g.match(n))))
       .sort()
       .map((n) => ({ id: prefix + n, scope: "system" as const, meta, display: n }));
   },

@@ -12,7 +12,7 @@ describe("flatpak", () => {
     env.pacman.repo.add("flatpak");
     env.flatpak.remotes.add("flathub");
     env.flatpak.installed.set("org.kde.krita", "flathub"); // there before rig
-    const m = module("apps", ({ pkg }) => void pkg.flatpak(["org.mozilla.firefox", "com.valvesoftware.Steam", "org.kde.krita"]));
+    const m = module("apps", (ctx) => void ctx.pkg.flatpak(["org.mozilla.firefox", "com.valvesoftware.Steam", "org.kde.krita"]));
     const r = await env.apply([m]);
     expect(r.failed).toBe(0);
     expect(ops(r.plan)).toEqual(["create pkg:flatpak:com.valvesoftware.Steam", "create pkg:flatpak:org.mozilla.firefox", "create pkg:pacman:flatpak"]);
@@ -30,11 +30,11 @@ describe("flatpak", () => {
   test("adds a missing remote first; rejects names that aren't app IDs", async () => {
     const env = makeEnv();
     env.pacman.repo.add("flatpak");
-    await env.apply([module("m", ({ pkg }) => void pkg.flatpak("org.mozilla.firefox"))]);
+    await env.apply([module("m", (ctx) => void ctx.pkg.flatpak("org.mozilla.firefox"))]);
     expect(mutations(env.system.calls)).toContain("flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo");
     expect(env.flatpak.installed.get("org.mozilla.firefox")).toBe("flathub");
 
-    const g = env.evalHost([module("m", ({ pkg }) => void pkg.flatpak("firefox"))]);
+    const g = env.evalHost([module("m", (ctx) => void ctx.pkg.flatpak("firefox"))]);
     expect(g.errors[0]).toContain('reverse-DNS names like org.mozilla.firefox, not "firefox"');
   });
 });
@@ -52,8 +52,8 @@ describe("kconfig", () => {
     const kwinrc = join(env.home, ".config/kwinrc");
     mkdirSync(join(env.home, ".config"), { recursive: true });
     writeFileSync(kwinrc, "[Plugins]\nblurEnabled=true\nshakecursorEnabled=true\n\n[Windows]\nPlacement=Smart\n");
-    const m = module("kde", ({ kconfig }) =>
-      void kconfig("kwinrc", {
+    const m = module("kde", (ctx) =>
+      void ctx.kconfig("kwinrc", {
         Plugins: { blurEnabled: false },
         "Effect-overview][Shortcuts": { Toggle: "Meta+W" },
       }),
@@ -82,15 +82,15 @@ describe("kconfig", () => {
 
   test("a key that didn't exist is deleted again; a fully managed file can't also be edited", async () => {
     const env = makeEnv();
-    await env.apply([module("kde", ({ kconfig }) => void kconfig("~/.config/kdeglobals", { KDE: { SingleClick: false } }))]);
+    await env.apply([module("kde", (ctx) => void ctx.kconfig("~/.config/kdeglobals", { KDE: { SingleClick: false } }))]);
     expect(readFileSync(join(env.home, ".config/kdeglobals"), "utf8")).toContain("SingleClick=false");
     await env.apply([]);
     expect(readFileSync(join(env.home, ".config/kdeglobals"), "utf8")).not.toContain("SingleClick");
 
     const g = env.evalHost([
-      module("m", ({ kconfig, file }) => {
-        file("~/.config/kdeglobals", "x");
-        kconfig("kdeglobals", { KDE: { SingleClick: false } });
+      module("m", (ctx) => {
+        ctx.file("~/.config/kdeglobals", "x");
+        ctx.kconfig("kdeglobals", { KDE: { SingleClick: false } });
       }),
     ]);
     g.finalize();
@@ -119,7 +119,7 @@ describe("git", () => {
   test("clones, checks out a pinned tag, moves to a new tag without pulling the branch", async () => {
     const { env, origin, sh } = await gitEnv();
     const path = join(env.home, "src/thing");
-    const m = (ref?: string) => module("dev", ({ git }) => void git("~/src/thing", origin, { ref }));
+    const m = (ref?: string) => module("dev", (ctx) => void ctx.git("~/src/thing", origin, { ref }));
 
     const r = await env.apply([m("v1")]);
     expect(r.failed).toBe(0);
@@ -141,26 +141,26 @@ describe("git", () => {
   test("refuses to switch over local changes, or to adopt a checkout of another remote", async () => {
     const { env, origin } = await gitEnv();
     const path = join(env.home, "src/thing");
-    await env.apply([module("dev", ({ git }) => void git("~/src/thing", origin, { ref: "v1" }))]);
+    await env.apply([module("dev", (ctx) => void ctx.git("~/src/thing", origin, { ref: "v1" }))]);
     writeFileSync(join(path, "f"), "local edit\n");
-    const p = await env.plan([module("dev", ({ git }) => void git("~/src/thing", origin, { ref: "v2" }))]);
+    const p = await env.plan([module("dev", (ctx) => void ctx.git("~/src/thing", origin, { ref: "v2" }))]);
     expect(p.items[0]!.op === "blocked" && p.items[0]!.reason).toContain("has local changes");
 
-    const other = await env.plan([module("dev", ({ git }) => void git("~/src/thing", "https://example.com/other.git"))]);
+    const other = await env.plan([module("dev", (ctx) => void ctx.git("~/src/thing", "https://example.com/other.git"))]);
     expect(other.items[0]!.op === "blocked" && other.items[0]!.reason).toBe(`origin is ${origin}, not https://example.com/other.git`);
   });
 
   test("clones are kept when undeclared, unless prune: true and nothing would be lost", async () => {
     const { env, origin } = await gitEnv();
     const path = join(env.home, "src/thing");
-    await env.apply([module("dev", ({ git }) => void git("~/src/thing", origin))]);
+    await env.apply([module("dev", (ctx) => void ctx.git("~/src/thing", origin))]);
     const kept = await env.apply([]);
     expect(ops(kept.plan)).toEqual([`forget git:${path}`]);
     expect(existsSync(path)).toBe(true);
 
     const env2 = (await gitEnv()).env;
     const p2 = join(env2.home, "src/thing");
-    const pruned = module("dev", ({ git }) => void git("~/src/thing", origin, { prune: true }));
+    const pruned = module("dev", (ctx) => void ctx.git("~/src/thing", origin, { prune: true }));
     await env2.apply([pruned]);
     writeFileSync(join(p2, "untracked"), "x");
     expect(ops((await env2.apply([])).plan)).toEqual([`blocked git:${p2}`]);
