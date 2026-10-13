@@ -56,7 +56,7 @@ ${c.bold("flags")}
   --only <glob>              restrict to resource IDs or module names matching glob
   --force                    overwrite/remove things rig would otherwise refuse to
   --upgrade                  pacman -Syu before applying
-  --demote                   exact mode / packages.remove: mark undeclared packages as deps instead of removing
+  --demote                   exact mode / pkg.remove: mark undeclared packages as deps instead of removing
   --no-snapshot              skip the btrfs/snapper snapshot around system changes
   --config <dir>             config repo (default: search upwards, $RIG_CONFIG, ~/infra)
   --json                     machine-readable output

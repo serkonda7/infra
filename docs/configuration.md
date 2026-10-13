@@ -51,6 +51,7 @@ apply. Pass IDs to `after` (or `onChange`, `on`, `restartOn`) to order things.
 | `pkg(names)` | `pkg:pacman:…` / `pkg:apt:…` | One transaction per run. Cross-distro names: `{ arch, debian }`, plus a built-in alias table (`fd` → `fd-find`, …). |
 | `pkg.aur(names)` | `pkg:aur:…` | Built by paru as your user. paru is bootstrapped from the repos. |
 | `pkg.flatpak(appIds, { remote?, url? })` | `pkg:flatpak:…` | System-wide, from Flathub by default (the remote is added if missing). Installs the `flatpak` package first. |
+| `pkg.remove(names)` | — | Removes these packages/Flatpak apps (globs) even if installed before rig; see [Packages](#packages). |
 | `pkg.repo(name, opts)` | `repo:pacman:…` / file | pacman.conf section + signing keys, or a deb822 apt source + keyring. |
 | `file(path, content \| { source, mode })` | `file:<path>` | Atomic write. A pre-existing original is backed up and restored on removal. Secrets: 0600, redacted in plans. |
 | `link(path, repoPath)`, `link.tree(dir, dest)` | `link:<path>` | Symlinks into the repo, stow-like for trees. |
@@ -77,9 +78,10 @@ Context values: `facts` (distro, CPU level, GPU, root fs, boot loader, users,
 - **exact** (`packages: { mode: "exact", keep: ["globs"] }`) also removes
   every undeclared explicitly-installed package (`--demote` marks them as
   dependencies instead). Flatpak apps are always additive.
-- **remove** (`packages: { remove: ["nano", "yay-*", "org.kde.krita"] }`)
-  removes the listed explicitly-installed packages and Flatpak apps in either
-  mode, including ones installed before rig. Declared packages win (with a
+- **remove** (`ctx.pkg.remove(["nano", "yay-*", "org.kde.krita"])` in a
+  module, or `packages: { remove: [...] }` on the host) removes the listed
+  explicitly-installed packages and Flatpak apps in either mode, including
+  ones installed before rig. Declared packages win (with a
   warning), `base` is never removed, and `--demote` applies here too.
 - `rig adopt packages` writes your machine's explicit packages to
   `modules/_adopted/<host>-packages.ts` to start from.

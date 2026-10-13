@@ -266,6 +266,8 @@ describe("exact package mode", () => {
     const p = await env.plan([m], { packages: { mode: "exact", keep: ["linux-*"] } });
     expect(ops(p)).toEqual(["destroy pkg:aur:yay-bin", "destroy pkg:pacman:htop"]);
     expect(p.warnings.join()).toContain("2 undeclared packages will be removed");
+    // The apt backend has nothing to prune on Arch: dpkg-query and apt-mark aren't installed.
+    expect(env.user.calls.filter((c) => /^(dpkg|apt)/.test(c[0]!))).toEqual([]);
 
     const additive = await env.plan([m]);
     expect(ops(additive)).toEqual([]);
@@ -310,6 +312,19 @@ describe("packages.remove", () => {
     expect(ops(p)).toEqual(["destroy pkg:pacman:htop"]);
     await env.apply([], { packages: { remove: ["htop"] }, demote: true });
     expect(env.pacman.installed.get("htop")).toBe(false);
+  });
+
+  test("modules can remove packages with pkg.remove", async () => {
+    const env = makeEnv();
+    for (const n of ["git", "nano", "vim"]) env.pacman.installed.set(n, true);
+    env.flatpak.installed.set("org.kde.krita", "flathub");
+    const cleanup = module("cleanup", (ctx) => {
+      ctx.pkg.remove(["nano", "git"]);
+      ctx.pkg.remove("org.kde.*");
+    });
+    const p = await env.plan([module("m", (ctx) => void ctx.pkg(["git"])), cleanup], { packages: { remove: ["vim"] } });
+    expect(ops(p)).toEqual(["destroy pkg:flatpak:org.kde.krita", "destroy pkg:pacman:nano", "destroy pkg:pacman:vim"]);
+    expect(p.warnings).toContain("pkg:pacman:git is declared but matches packages.remove; kept");
   });
 });
 

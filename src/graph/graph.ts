@@ -26,6 +26,8 @@ export class Graph {
   readonly assets = new Set<string>();
   /** Names of secrets the config asked for. */
   readonly secrets = new Set<string>();
+  /** Package names (globs) modules asked to remove with pkg.remove, merged with the host's packages.remove. */
+  readonly removals: string[] = [];
   private seq = 0;
 
   add(type: ResourceType, spec: any, prov: Provenance): string {

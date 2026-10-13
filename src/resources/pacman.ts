@@ -16,8 +16,10 @@ export interface PacmanMeta {
   markedExplicit?: boolean;
   /** Already explicitly installed before rig: never removed in additive mode. */
   adopted?: boolean;
-  /** Not declared at all; pruned because of exact mode. */
+  /** Not declared at all; pruned because of exact mode or pkg.remove. */
   extraneous?: boolean;
+  /** Listed in packages.remove (explicit removal request), not just undeclared in exact mode. */
+  requested?: boolean;
 }
 
 export const tail = (s: string, n = 6) => s.trim().split("\n").slice(-n).join("\n");
@@ -40,7 +42,9 @@ export function planPkgDestroy(_id: string, meta: PacmanMeta, live: PacmanLive |
   if (!live) return { op: "forget", note: "already removed" };
   if (meta.extraneous) {
     if (!live.explicit) return { op: "forget", note: "no longer explicit" };
-    return { op: "destroy", note: meta.installed ? "not declared (exact mode)" : "not declared; mark as dependency" };
+    if (meta.requested)
+      return { op: "destroy", note: meta.installed ? "listed in packages.remove" : "listed in packages.remove; mark as dependency" };
+    return { op: "destroy", note: meta.installed ? "not declared" : "not declared; mark as dependency" };
   }
   if (meta.installed) return { op: "destroy" };
   if (meta.markedExplicit && live.explicit) return { op: "destroy", note: "mark as dependency" };
@@ -156,12 +160,15 @@ function pkgType(b: Backend): ResourceType<PacmanSpec, PacmanLive, PacmanMeta> {
       return results;
     },
 
-    async extraneous({ declared, keep, demote, only }, x) {
+    async extraneous({ declared, facts, keep, demote, only }, x) {
+      if (facts.os.family !== "arch") return [];
       const [explicit, foreignOut] = await Promise.all([x.user.run(["pacman", "-Qqe"]), x.user.run(["pacman", "-Qqm"])]);
       const foreign = new Set(lines(foreignOut.stdout));
       const kept = keep.map((k) => new Bun.Glob(k));
       const wanted = only?.map((k) => new Bun.Glob(k));
-      const meta: PacmanMeta = demote ? { markedExplicit: true, extraneous: true } : { installed: true, extraneous: true };
+      const meta: PacmanMeta = demote
+        ? { markedExplicit: true, extraneous: true, ...(only ? { requested: true } : {}) }
+        : { installed: true, extraneous: true, ...(only ? { requested: true } : {}) };
       return lines(explicit.stdout)
         .filter((n) => b.owns(n, foreign) && !declared.has(prefix + n) && !kept.some((g) => g.match(n)) && (!wanted || wanted.some((g) => g.match(n))))
         .map((n) => ({ id: prefix + n, scope: "system" as const, meta, display: n }));

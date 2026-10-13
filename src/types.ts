@@ -162,6 +162,8 @@ export interface Extraneous {
 export interface ExtraneousOptions {
   /** Declared resource IDs. */
   declared: ReadonlySet<string>;
+  /** Host facts: backends for another distro family have nothing to prune. */
+  facts: Facts;
   /** Names (globs) that are never considered extraneous. */
   keep: string[];
   /** Mark as dependency instead of removing. */

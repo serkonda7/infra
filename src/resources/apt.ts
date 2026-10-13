@@ -148,7 +148,8 @@ export const aptType: ResourceType<PacmanSpec, PacmanLive, PacmanMeta> = {
     return results;
   },
 
-  async extraneous({ declared, keep, demote, only }, x) {
+  async extraneous({ declared, facts, keep, demote, only }, x) {
+    if (facts.os.family !== "debian") return [];
     const [man, prio] = await Promise.all([
       manual(x.user),
       x.user.run(["dpkg-query", "-W", "-f", "${Package}\t${Priority}\n"], { env: ENV }),
@@ -162,7 +163,9 @@ export const aptType: ResourceType<PacmanSpec, PacmanLive, PacmanMeta> = {
     );
     const kept = [...keep, ...APT_PROTECTED].map((k) => new Bun.Glob(k));
     const wanted = only?.map((k) => new Bun.Glob(k));
-    const meta: PacmanMeta = demote ? { markedExplicit: true, extraneous: true } : { installed: true, extraneous: true };
+    const meta: PacmanMeta = demote
+      ? { markedExplicit: true, extraneous: true, ...(only ? { requested: true } : {}) }
+      : { installed: true, extraneous: true, ...(only ? { requested: true } : {}) };
     return [...man]
       .filter((n) => !base.has(n) && !declared.has(prefix + n) && !kept.some((g) => g.match(n)) && (!wanted || wanted.some((g) => g.match(n))))
       .sort()

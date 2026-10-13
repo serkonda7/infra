@@ -14,7 +14,7 @@ export interface PlanView {
   generation: number | null;
   warnings: string[];
   summary: ReturnType<typeof summarize>;
-  /** Some change or destroy needs root. */
+  /** Some change or removal needs root. */
   needsRoot: boolean;
   items: ItemView[];
 }
@@ -113,7 +113,7 @@ export function formatPlan(plan: Plan | PlanView, opts: { verbose?: boolean } = 
   lines.push("");
   if (!s.actionable && !s.blocked) lines.push(c.green("No changes. The machine matches the configuration."));
   else {
-    const parts = [`${s.add} to add`, `${s.change} to change`, `${s.destroy} to destroy`];
+    const parts = [`${s.add} to add`, `${s.change} to change`, `${s.destroy} to remove`];
     if (s.blocked) parts.push(c.red(`${s.blocked} blocked`));
     lines.push(parts.join(", ") + ".");
   }

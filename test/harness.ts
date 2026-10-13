@@ -311,7 +311,8 @@ export function makeEnv(opts: { os?: "arch" | "debian"; types?: ResourceType[] }
     const order = g.finalize();
     if (g.errors.length) throw new Error(g.errors.join("\n"));
     const exact = opts.packages?.mode === "exact" ? { keep: ["base", ...(opts.packages.keep ?? [])], demote: opts.demote ?? false } : undefined;
-    const remove = opts.packages?.remove ? { names: opts.packages.remove, demote: opts.demote ?? false } : undefined;
+    const names = [...(opts.packages?.remove ?? []), ...g.removals];
+    const remove = names.length ? { names, demote: opts.demote ?? false } : undefined;
     return makePlan({ host: "testhost", facts, graph: g, order, prev: await state.latest("testhost"), types, x, repo, force: opts.force, filter: makeFilter(opts), exact, remove });
   }
 

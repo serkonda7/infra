@@ -94,6 +94,8 @@ export interface PkgFn {
   repo(name: string, opts: RepoOptions | AptRepoOptions): string;
   /** Flatpak apps (reverse-DNS IDs), installed system-wide; the flatpak package comes along. */
   flatpak(apps: string | string[], opts?: FlatpakOptions): string[];
+  /** Remove these packages or Flatpak apps (globs) in any package mode, even ones installed before rig. Declared packages win. */
+  remove(names: string | string[]): void;
 }
 
 export interface UnitOptions extends Deps {
@@ -425,6 +427,7 @@ export function evaluate(hostDef: HostDef, env: EvalEnv): Graph {
             g.add(flatpakType, { app, remote, ...(opts.url ? { url: opts.url } : {}), after: [flatpak, ...(opts.after ?? [])] } satisfies FlatpakSpec, p),
           );
         }),
+      remove: (names: string | string[]) => void g.removals.push(...(Array.isArray(names) ? names : [names])),
     },
   );
 

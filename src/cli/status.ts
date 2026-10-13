@@ -87,7 +87,7 @@ export function formatStatus(s: StatusView): string {
   const d = s.drift;
   if (!d.items.length) row("drift", c.green("none — the machine matches the configuration"));
   else {
-    const counts = [d.add && `${d.add} to add`, d.change && `${d.change} to change`, d.destroy && `${d.destroy} to destroy`, d.blocked && c.red(`${d.blocked} blocked`)].filter(Boolean);
+    const counts = [d.add && `${d.add} to add`, d.change && `${d.change} to change`, d.destroy && `${d.destroy} to remove`, d.blocked && c.red(`${d.blocked} blocked`)].filter(Boolean);
     row("drift", `${counts.join(", ")} ${c.dim("(rig plan for details)")}`);
     for (const i of d.items.slice(0, 12)) out.push(`${" ".repeat(13)}${SIGIL[i.op] ?? " "} ${i.display}${i.reason ? c.dim(`  (${i.reason})`) : ""}`);
     if (d.items.length > 12) out.push(c.dim(`${" ".repeat(13)}… and ${d.items.length - 12} more`));

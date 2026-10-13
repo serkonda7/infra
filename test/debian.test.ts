@@ -100,6 +100,7 @@ describe("apt", () => {
     env.apt.installed.set("cowsay", true);
     const p = await env.plan([module("m", (ctx) => void ctx.pkg(["htop"]))], { packages: { mode: "exact" } });
     expect(ops(p)).toEqual(["destroy pkg:apt:cowsay", "destroy pkg:apt:nano"]);
+    expect(env.user.calls.filter((c) => c[0] === "pacman")).toEqual([]);
   });
 
   test("validation: unknown names fail, empty package lists and pending sources skip the check", async () => {

@@ -65,16 +65,19 @@ export async function makePlan(input: PlanInput): Promise<Plan> {
   const warnings = [...graph.warnings];
   const declared = new Set(graph.decls.keys());
   /** Queue undeclared live packages for removal; `own` also takes over adopted ones from the previous generation. */
-  const prune = async (opts: Omit<ExtraneousOptions, "declared">, own: boolean) => {
+  const prune = async (opts: Omit<ExtraneousOptions, "declared" | "facts">, own: boolean) => {
     let n = 0;
     for (const type of types.all) {
       if (!type.extraneous) continue;
-      for (const e of await type.extraneous({ declared, ...opts }, x)) {
+      for (const e of await type.extraneous({ declared, facts, ...opts }, x)) {
         if (!filter({ id: e.id, scope: e.scope })) continue;
         const queued = destroys.find(([id]) => id === e.id)?.[1];
         if (queued) {
           // Adopted earlier, so planDestroy would keep it; packages.remove says otherwise.
-          if (own && !(queued.meta as { installed?: boolean } | undefined)?.installed) queued.meta = e.meta;
+          if (own) {
+            if (queued.meta && typeof queued.meta === "object") (queued.meta as Record<string, unknown>).requested = true;
+            if (!(queued.meta as { installed?: boolean } | undefined)?.installed) queued.meta = e.meta;
+          }
           continue;
         }
         if (prev?.resources[e.id]) continue;
