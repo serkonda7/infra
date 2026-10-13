@@ -1,0 +1,6 @@
+{
+  "name": "infra",
+  "private": true,
+  "type": "module",
+  "devDependencies": { "rig": "link:rig" }
+}

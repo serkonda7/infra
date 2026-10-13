@@ -1,0 +1,30 @@
+{
+  "name": "rig",
+  "version": "0.1.0",
+  "description": "Declarative machine & dotfile management in Bun + TypeScript",
+  "type": "module",
+  "module": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "bin": {
+    "rig": "src/cli/main.ts"
+  },
+  "scripts": {
+    "rig": "bun src/cli/main.ts",
+    "test": "bun test",
+    "typecheck": "bun check",
+    "build": "bun build --compile --minify src/cli/main.ts --outfile dist/rig"
+  },
+  "packageManager": "bun@1.4.3",
+  "devDependencies": {
+    "@types/bun": "1.4.3"
+  },
+  "dependencies": {
+    "@noble/ciphers": "^2.4.0",
+    "@noble/curves": "^2.4.0",
+    "@noble/hashes": "^2.4.0",
+    "age-encryption": "^0.3.1"
+  }
+}
